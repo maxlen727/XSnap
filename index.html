@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XSnap - Tweet/X Screenshot Generator</title>
+    
+    <!-- 网站图标 -->
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    
+    <!-- 字体和样式表 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+    <header class="header">
+        <h1>
+            <svg id="logo-svg" width="40" height="40" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="48" fill="var(--accent-color)"/>
+                <path d="M68 32L32 68M32 32L68 68" stroke="white" stroke-width="12" stroke-linecap="round"/>
+            </svg>
+            <span data-i18n="appName">XSnap</span>
+        </h1>
+        <p data-i18n="tagline">将任意 Tweet/X 链接，转化为精美的分享图</p>
+    </header>
+
+    <main id="app-container">
+        <div id="welcome-screen">
+            <div class="input-group">
+                <input type="url" id="tweet-url" data-i18n-placeholder="placeholder">
+                <button id="fetch-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                    <span data-i18n="generate">生成</span>
+                </button>
+            </div>
+        </div>
+        <div id="editor-screen">
+            <aside id="controls-sidebar">
+                <div class="control-section">
+                    <h3 data-i18n="bgStyle">背景样式</h3>
+                    <div class="color-swatch-container" id="bg-swatches"></div>
+                    <div class="custom-color-pickers" id="custom-bg-picker">
+                        <input type="color" id="bg-color-1"> <input type="color" id="bg-color-2">
+                    </div>
+                </div>
+                 <div class="control-section">
+                    <h3 data-i18n="cardStyle">卡片样式</h3>
+                    <div class="color-swatch-container" id="card-swatches"></div>
+                    <div class="custom-color-pickers" id="custom-card-picker">
+                         <input type="color" id="card-color-custom">
+                    </div>
+                </div>
+                <div class="control-section">
+                    <h3 data-i18n="layout">多图布局</h3>
+                    <div class="layout-chooser">
+                        <input type="radio" id="layout-grid" name="layout-mode" value="grid" checked>
+                        <label for="layout-grid" data-i18n="grid">网格</label>
+                        <input type="radio" id="layout-waterfall" name="layout-mode" value="waterfall">
+                        <label for="layout-waterfall" data-i18n="waterfall">瀑布流</label>
+                    </div>
+                </div>
+                <button class="download-button" id="download-btn"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span data-i18n="download">下载图片</span></button>
+            </aside>
+            <div id="preview-wrapper">
+                <div id="capture-area">
+                    <div id="card" class="light">
+                        <div class="card-header"> <img id="avatar-preview" alt="Avatar"> <div class="user-info"> <span class="username">Username</span> <span class="handle">@handle</span> </div> </div>
+                        <p id="text-preview"></p>
+                        <div id="media-preview"></div>
+                        <div class="card-footer"> <span id="replies-preview">💬 0</span> <span id="retweets-preview">🔁 0</span> <span id="likes-preview">❤️ 0</span> </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer data-i18n-html="footer"></footer>
+    
+    <div id="toast-container"></div>
+
+    <!-- 脚本 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="assets/i18n.js" defer></script>
+    <script src="assets/main.js" defer></script>
+</body>
+</html>
