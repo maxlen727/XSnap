@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentTweetData = null;
     let currentLang = 'en';
+    let proxyRetryNotified = false; // 全局标志位，用于控制通知只显示一次
     
     // --- 函数定义区 ---
     
@@ -76,19 +77,27 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.className = `toast ${type}`;
         toast.textContent = message;
         dom.toastContainer.appendChild(toast);
-        setTimeout(() => toast.remove(), 4000);
+        setTimeout(() => toast.remove(), 5000); // 延长显示时间以便用户阅读
     }
 
     async function fetchTweetData() {
         let url = dom.tweetUrlInput.value.trim();
         if (!url) { showToast(i18n[currentLang].toastInvalidLink, 'error'); return; }
+        
+        proxyRetryNotified = false; // 为每一次新的抓取重置通知标志
+        
         dom.fetchBtn.disabled = true;
         dom.fetchBtn.querySelector('span').textContent = i18n[currentLang].generate;
         showToast(i18n[currentLang].toastFetch, 'info');
-        url = url.replace(/^(https?:\/\/)?(www\.)?/, 'https://').replace('twitter.com', 'fxtwitter.com').replace('x.com', 'fxtwitter.com');
+        
+        if (!url.startsWith('http')) { url = 'https://' + url; }
+
+        url = url.replace('twitter.com', 'fxtwitter.com').replace('x.com', 'fxtwitter.com');
         const apiUrl = new URL(url);
+        apiUrl.protocol = 'https:';
         apiUrl.hostname = 'api.fxtwitter.com';
         apiUrl.pathname += '/json';
+        
         try {
             const response = await fetch(apiUrl.toString());
             if (!response.ok) throw new Error(`API Request Failed: ${response.status}`);
@@ -113,7 +122,9 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.preview.username.textContent = author.name;
         dom.preview.handle.textContent = `@${author.screen_name}`;
         dom.preview.text.textContent = text;
-        dom.preview.avatar.src = author.avatar_url;
+        
+        loadImageWithFallback(dom.preview.avatar, author.avatar_url);
+
         dom.preview.replies.textContent = `💬 ${replies || 0}`;
         dom.preview.retweets.textContent = `🔁 ${retweets || 0}`;
         dom.preview.likes.textContent = `❤️ ${likes || 0}`;
@@ -143,10 +154,45 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.preview.media.appendChild(container);
         }
     }
+    
+    function proxyUrl(url) {
+        return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    }
+    
+    /**
+     * 加载图片并处理潜在的拦截失败
+     * @param {HTMLImageElement} imgElement - The image element to load the source into.
+     * @param {string} originalSrc - The original, direct URL of the image.
+     */
+    function loadImageWithFallback(imgElement, originalSrc) {
+        imgElement.crossOrigin = "anonymous";
+        
+        // 监听错误
+        imgElement.onerror = () => {
+            // 只在第一次失败时通知用户
+            if (!proxyRetryNotified) {
+                let msg = "A request was blocked by tracking protection. Retrying with a proxy...";
+                if (currentLang === 'zh') {
+                    msg = "一个请求被增强型隐私保护拦截，正在尝试使用代理…";
+                }
+                showToast(msg, 'info');
+                proxyRetryNotified = true;
+            }
+            
+            // 使用代理重试
+            imgElement.src = proxyUrl(originalSrc);
+            
+            // 清除 onerror 处理器以防止无限循环
+            imgElement.onerror = null;
+        };
+        
+        // 首先尝试直接加载
+        imgElement.src = originalSrc;
+    }
 
     function createImage(src) {
         const img = document.createElement('img');
-        img.src = src;
+        loadImageWithFallback(img, src);
         return img;
     }
 
@@ -218,31 +264,20 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.preview.captureArea.style.backgroundImage = `linear-gradient(135deg, ${colors[0]}, ${colors[1]})`;
     }
 
-    /**
-     * BUG FIX in this function
-     */
     function downloadImage() {
         if (!currentTweetData) { 
             showToast(i18n[currentLang].toastNoData, 'error'); 
             return; 
         }
 
-        // --- BUG FIX STARTS HERE ---
-        // 1. Get all text elements that might have rendering issues.
         const textElementsToFix = [
-            dom.preview.username,
-            dom.preview.handle,
-            dom.preview.text,
-            dom.preview.replies,
-            dom.preview.retweets,
-            dom.preview.likes
+            dom.preview.username, dom.preview.handle, dom.preview.text,
+            dom.preview.replies, dom.preview.retweets, dom.preview.likes
         ];
         
-        // 2. Temporarily apply their computed color as an inline style.
         textElementsToFix.forEach(el => {
             el.style.color = window.getComputedStyle(el).color;
         });
-        // --- BUG FIX ENDS HERE ---
 
         const watermark = document.createElement('div');
         watermark.id = 'watermark';
@@ -263,12 +298,9 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .finally(() => {
                 dom.preview.captureArea.removeChild(watermark);
-                // --- BUG FIX CLEANUP ---
-                // 4. Remove the temporary inline styles.
                 textElementsToFix.forEach(el => {
                     el.style.color = '';
                 });
-                // --- BUG FIX CLEANUP ENDS ---
             });
     }
 

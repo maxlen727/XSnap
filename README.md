@@ -23,4 +23,5 @@ XSnap 的核心功能得以实现，离不开以下优秀的项目：
 
 *   **[FxEmbed/FxEmbed](https://github.com/FxEmbed/FxEmbed)**: 整个项目的数据来源，一个强大而可靠的 Twitter/X 链接修复和内容提取工具。没有它，就没有 XSnap。
 *   **[html2canvas](https://github.com/niklasvh/html2canvas)**: 实现了将网页内容转换为图片的魔法。
+*   **[allOrigins](https://github.com/gnuns/allorigins)**: 现代化浏览器的增强防护可能会造成同源策略的问题，此时我们将使用allOrigins来进行代理
 *   **Gemini**
