@@ -16,6 +16,7 @@ const i18n = {
         toastDownload: "Download started!",
         toastNoData: "Please generate a preview first!",
         toastInvalidLink: "Please enter a valid link!",
+        showParentTweet: "Show Parent Tweet",
         footer: `Built by <a href="https://github.com/maxlen727" target="_blank">MaxLen</a> & Gemini | Powered by <a href="https://github.com/FxEmbed/FxEmbed" target="_blank">FxEmbed</a> | 
                  <a href="https://github.com/maxlen727/XSnap" target="_blank">View on GitHub</a>`
     },
@@ -36,6 +37,7 @@ const i18n = {
         toastDownload: "已开始下载！",
         toastNoData: "请先生成预览图！",
         toastInvalidLink: "请输入有效链接！",
+        showParentTweet: "显示上一条推文",
         footer: `由 <a href="https://github.com/maxlen727" target="_blank">MaxLen</a> & Gemini 共同构建 | 基于 <a href="https://github.com/FxEmbed/FxEmbed" target="_blank">FxEmbed</a> | 
                  <a href="https://github.com/maxlen727/XSnap" target="_blank">在 GitHub 上查看本项目</a>`
     }

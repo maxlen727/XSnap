@@ -11,16 +11,29 @@
     <!-- 字体和样式表 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet" crossorigin="anonymous">
     <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
     <header class="header">
-        <h1>
-            <svg id="logo-svg" width="40" height="40" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="50" cy="50" r="48" fill="var(--accent-color)"/>
-                <path d="M68 32L32 68M32 32L68 68" stroke="white" stroke-width="12" stroke-linecap="round"/>
+                <h1>
+            <svg id="logo-svg" width="40" height="40" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="cameraGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#333333"/>
+                    <stop offset="100%" stop-color="#0a0a0a"/>
+                    </linearGradient>
+                </defs>
+                <rect width="120" height="120" rx="20" fill="url(#cameraGradient)"/>
+                <circle cx="60" cy="60" r="38" fill="#1a1a1a" stroke="#444" stroke-width="2"/>
+                <circle cx="60" cy="60" r="30" fill="#111" stroke="#333" stroke-width="1"/>
+                <g transform="translate(60, 60) scale(0.05) translate(-420, -420)">
+                    <path d="M818 800 498.11 333.745l.546.437L787.084 0h-96.385L455.738 272 269.15 0H16.367l298.648 435.31-.036-.037L0 800h96.385l261.222-302.618L565.217 800zM230.96 72.727l448.827 654.546h-76.38L154.217 72.727z" fill="#FFF"/>
+                </g>
+                <circle cx="18" cy="18" r="10" fill="#0a0a0a" stroke="#222" stroke-width="1"/>
+                <circle cx="70" cy="45" r="4" fill="white" opacity="0.3"/>
+                <circle cx="55" cy="50" r="2" fill="white" opacity="0.2"/>
             </svg>
             <span data-i18n="appName">XSnap</span>
         </h1>
@@ -66,12 +79,7 @@
             </aside>
             <div id="preview-wrapper">
                 <div id="capture-area">
-                    <div id="card" class="light">
-                        <div class="card-header"> <img id="avatar-preview" alt="Avatar"> <div class="user-info"> <span class="username">Username</span> <span class="handle">@handle</span> </div> </div>
-                        <p id="text-preview"></p>
-                        <div id="media-preview"></div>
-                        <div class="card-footer"> <span id="replies-preview">💬 0</span> <span id="retweets-preview">🔁 0</span> <span id="likes-preview">❤️ 0</span> </div>
-                    </div>
+                    <!-- The content of this will be generated dynamically -->
                 </div>
             </div>
         </div>
@@ -80,6 +88,37 @@
     <footer data-i18n-html="footer"></footer>
     
     <div id="toast-container"></div>
+
+    <!-- Tweet Card Template -->
+    <div id="tweet-card-template" class="card" style="display: none;">
+        <div class="retweet-info"></div>
+        <button class="show-parent-btn" data-i18n="showParentTweet">Show Parent Tweet</button>
+        <div class="card-header">
+            <img class="avatar-preview" alt="Avatar">
+            <div class="user-info">
+                <span class="username">Username</span>
+                <span class="handle">@handle</span>
+            </div>
+        </div>
+        <p class="text-preview"></p>
+        <div class="quoted-tweet-preview">
+            <div class="card-header">
+                <img class="quoted-avatar-preview" alt="Quoted Avatar">
+                <div class="user-info">
+                    <span class="username quoted-username"></span>
+                    <span class="handle quoted-handle"></span>
+                </div>
+            </div>
+            <p class="quoted-text-preview"></p>
+            <div class="quoted-media-preview"></div>
+        </div>
+        <div class="media-preview"></div>
+        <div class="card-footer">
+            <span class="replies-preview">💬 0</span>
+            <span class="retweets-preview">🔁 0</span>
+            <span class="likes-preview">❤️ 0</span>
+        </div>
+    </div>
 
     <!-- 脚本 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>

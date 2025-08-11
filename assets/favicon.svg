@@ -1,4 +1,32 @@
-<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="50" cy="50" r="48" fill="#4a69ff"/>
-    <path d="M68 32L32 68M32 32L68 68" stroke="white" stroke-width="12" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="XSnap logo - X camera (black theme with centered large X logo)">
+  <defs>
+    <linearGradient id="cameraGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#333333"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(0,0,0,0.3)"/>
+    </filter>
+  </defs>
+
+  <!-- Camera body with gradient -->
+  <rect width="120" height="120" rx="20" fill="url(#cameraGradient)" filter="url(#shadow)"/>
+  
+  <!-- Camera lens outer ring -->
+  <circle cx="60" cy="60" r="38" fill="#1a1a1a" stroke="#444" stroke-width="2"/>
+  
+  <!-- Camera lens middle ring -->
+  <circle cx="60" cy="60" r="30" fill="#111" stroke="#333" stroke-width="1"/>
+  
+  <!-- X icon - 调整为居中且放大 -->
+  <g transform="translate(60, 60) scale(0.05) translate(-420, -420)">
+    <path d="M818 800 498.11 333.745l.546.437L787.084 0h-96.385L455.738 272 269.15 0H16.367l298.648 435.31-.036-.037L0 800h96.385l261.222-302.618L565.217 800zM230.96 72.727l448.827 654.546h-76.38L154.217 72.727z" fill="#FFF"/>
+  </g>
+
+  <!-- Lens inner detail -->
+  <circle cx="18" cy="18" r="10" fill="#0a0a0a" stroke="#222" stroke-width="1"/>
+  
+  <!-- Highlight effect -->
+  <circle cx="70" cy="45" r="4" fill="white" opacity="0.3"/>
+  <circle cx="55" cy="50" r="2" fill="white" opacity="0.2"/>
 </svg>
