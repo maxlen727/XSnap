@@ -1,10 +1,10 @@
 /* ==========================================================================
    XSnap
-   Static, no build step. Data from FxEmbed, pixels from html2canvas-pro.
+   Static page, no build step. Data from FxEmbed, pixels from html2canvas-pro.
 
-   Two rendering rules that matter, because the export is the product:
+   Two renderer quirks drive how the export is built:
    · html2canvas ignores `gap` on flex containers → spacing is done with margins
-   · html2canvas ignores `object-fit`             → images are cropped by hand
+   · html2canvas ignores `object-fit`              → images are cropped by hand
    ========================================================================== */
 'use strict';
 
@@ -12,28 +12,43 @@
   const API = 'https://api.fxtwitter.com';
   const PROXY = 'https://api.allorigins.win/raw?url=';
   const EXAMPLE = 'https://x.com/elonmusk/status/1949938925163962634';
-  const THEME_KEY = 'xsnap.theme';
+
+  /*
+   * Patterns are SVG data-URI tiles, not CSS gradients. html2canvas never paints
+   * a tiled radial/linear gradient, but it does paint an image background — so
+   * every texture here survives the export.
+   */
+  function tileUrl(w, h, inner) {
+    const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='" + w + "' height='" + h + "'>" + inner + '</svg>';
+    return 'url("data:image/svg+xml;utf8,' + svg.replace(/#/g, '%23') + '")';
+  }
 
   const BG_PRESETS = [
-    { id: 'ocean',    colors: ['#89f7fe', '#66a6ff'] },
-    { id: 'sunset',   colors: ['#ffecd2', '#fcb69f'] },
-    { id: 'amethyst', colors: ['#8e2de2', '#4a00e0'] },
-    { id: 'mint',     colors: ['#d4fc79', '#96e6a1'] },
-    { id: 'lush',     colors: ['#a8e063', '#56ab2f'] },
-    { id: 'citrus',   colors: ['#f6d365', '#fda085'] },
-    { id: 'dusk',     colors: ['#4b6cb7', '#182848'] },
-    { id: 'graphite', colors: ['#434343', '#000000'] }
+    { id: 'paper',  name: '纸',   bg: '#f4f1ea', wm: 'rgba(17,17,17,0.42)' },
+    { id: 'white',  name: '白',   bg: '#ffffff', wm: 'rgba(17,17,17,0.34)' },
+    { id: 'ink',    name: '墨',   bg: '#131313', wm: 'rgba(255,255,255,0.46)' },
+    { id: 'rouge',  name: '胭脂', bg: '#f60c3e', wm: 'rgba(255,255,255,0.66)' },
+    { id: 'blush',  name: '粉',   bg: '#ffd9e0', wm: 'rgba(17,17,17,0.42)' },
+    { id: 'sand',   name: '沙',   bg: '#e6ddca', wm: 'rgba(17,17,17,0.42)' },
+    { id: 'dots',   name: '点阵', bg: '#f4f1ea', wm: 'rgba(17,17,17,0.42)',
+      tile: { w: 14, h: 14, svg: "<circle cx='7' cy='7' r='1' fill='#f60c3e' fill-opacity='0.38'/>" } },
+    { id: 'grid',   name: '方格', bg: '#ffffff', wm: 'rgba(17,17,17,0.34)',
+      tile: { w: 24, h: 24,
+        svg: "<rect width='24' height='1' fill='#111111' fill-opacity='0.09'/>" +
+             "<rect width='1' height='24' fill='#111111' fill-opacity='0.09'/>" } },
+    { id: 'stripe', name: '斜纹', bg: '#f4f1ea', wm: 'rgba(17,17,17,0.42)',
+      tile: { w: 9, h: 9, svg: "<path d='M0 9 L9 0' stroke='#111111' stroke-opacity='0.10' stroke-width='1'/>" } }
   ];
 
   const CARD_PRESETS = [
-    { id: 'light', mode: 'light', preview: '#ffffff' },
-    { id: 'dim',   mode: 'dim',   preview: '#15202b' },
-    { id: 'dark',  mode: 'dark',  preview: '#000000' }
+    { id: 'white', mode: 'light', preview: '#ffffff' },
+    { id: 'cream', mode: 'cream', preview: '#faf8f3' },
+    { id: 'ink',   mode: 'ink',   preview: '#131313' }
   ];
 
   const state = {
     lang: 'en',
-    bg: { colors: BG_PRESETS[0].colors.slice() },
+    bg: { colors: ['#f4f1ea', '#f60c3e'], preset: 0 },
     card: { mode: 'light', color: '#ffffff' },
     layout: 'grid',
     quality: 3,
@@ -46,10 +61,10 @@
   let proxyNotified = false;
   let watermarkEl = null;
 
-  /* ── tiny helpers ─────────────────────────────────────────────────────── */
+  /* ── helpers ──────────────────────────────────────────────────────────── */
 
-  const $ = (sel, root) => (root || document).querySelector(sel);
-  const t = (key) => (i18n[state.lang] && i18n[state.lang][key]) || i18n.en[key] || key;
+  const $ = (s, r) => (r || document).querySelector(s);
+  const t = (k) => (i18n[state.lang] && i18n[state.lang][k]) || i18n.en[k] || k;
   const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 
   function fmtCount(n) {
@@ -79,24 +94,28 @@
     let h = String(hex).replace('#', '').trim();
     if (h.length === 3) h = h.split('').map((c) => c + c).join('');
     const n = parseInt(h, 16);
-    if (isNaN(n)) return { r: 255, g: 255, b: 255 };
-    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+    return isNaN(n) ? { r: 255, g: 255, b: 255 } : { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
   }
 
-  /* Returns a full card palette that stays readable on an arbitrary bg. */
-  function cardPalette(hex) {
+  function luma(hex) {
     const { r, g, b } = hexToRgb(hex);
     const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
-    const luma = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-    if (luma > 0.42) {
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  }
+
+  /* A card palette that stays readable on an arbitrary background colour. */
+  function cardPalette(hex) {
+    if (luma(hex) > 0.42) {
       return {
-        fg: '#0f1419', muted: '#536471',
-        line: 'rgba(15, 20, 25, 0.10)', quote: 'rgba(15, 20, 25, 0.035)'
+        fg: '#0f1419', muted: '#5b6570',
+        line: 'rgba(17,17,17,0.10)', edge: 'rgba(17,17,17,0.18)',
+        quote: 'rgba(17,17,17,0.035)'
       };
     }
     return {
-      fg: '#f2f4f6', muted: 'rgba(242, 244, 246, 0.62)',
-      line: 'rgba(255, 255, 255, 0.14)', quote: 'rgba(255, 255, 255, 0.06)'
+      fg: '#f2efe9', muted: 'rgba(242,239,233,0.60)',
+      line: 'rgba(255,255,255,0.12)', edge: 'rgba(255,255,255,0.22)',
+      quote: 'rgba(255,255,255,0.05)'
     };
   }
 
@@ -109,30 +128,9 @@
     dom.toasts.appendChild(el);
     setTimeout(() => {
       el.classList.add('is-out');
-      setTimeout(() => el.remove(), 260);
+      setTimeout(() => el.remove(), 220);
     }, 3600);
     while (dom.toasts.children.length > 3) dom.toasts.firstChild.remove();
-  }
-
-  /* ── theme ────────────────────────────────────────────────────────────── */
-
-  function initTheme() {
-    let saved = null;
-    try { saved = localStorage.getItem(THEME_KEY); } catch (e) { /* private mode */ }
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
-    document.documentElement.dataset.theme = saved || (prefersDark.matches ? 'dark' : 'light');
-
-    if (!saved) {
-      prefersDark.addEventListener('change', (e) => {
-        document.documentElement.dataset.theme = e.matches ? 'dark' : 'light';
-      });
-    }
-
-    dom.themeToggle.addEventListener('click', () => {
-      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-      document.documentElement.dataset.theme = next;
-      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* ignore */ }
-    });
   }
 
   /* ── i18n ─────────────────────────────────────────────────────────────── */
@@ -151,6 +149,7 @@
       const v = dict[el.dataset.i18nPlaceholder];
       if (v != null) el.placeholder = v;
     });
+    document.title = dict.pageTitle || document.title;
   }
 
   /* ── url → api ────────────────────────────────────────────────────────── */
@@ -204,15 +203,15 @@
   }
 
   /*
-   * html2canvas has no object-fit, so a "cover" crop is expressed as an
-   * absolutely positioned image with hand-computed size and offset.
+   * html2canvas has no object-fit, so "cover" is expressed as an absolutely
+   * positioned image with a hand-computed size and offset.
    */
-  function coverCell(src, cw, ch, radius, mr, mb, intrinsic) {
+  function coverCell(src, cw, ch, mr, mb, intrinsic) {
     const cell = document.createElement('div');
     cell.style.cssText =
       'position:relative;flex:0 0 auto;overflow:hidden;' +
-      `width:${cw}px;height:${ch}px;border-radius:${radius}px;` +
-      `margin-right:${mr}px;margin-bottom:${mb}px;background:rgba(128,128,128,0.14)`;
+      `width:${cw}px;height:${ch}px;` +
+      `margin-right:${mr}px;margin-bottom:${mb}px;background:rgba(128,128,128,0.12)`;
 
     const img = document.createElement('img');
     img.alt = '';
@@ -237,7 +236,7 @@
     return cell;
   }
 
-  /* ── media layout ─────────────────────────────────────────────────────── */
+  /* ── media ────────────────────────────────────────────────────────────── */
 
   function mediaItems(media) {
     if (!media) return [];
@@ -259,10 +258,9 @@
     if (!items.length) return;
 
     const options = opts || {};
-    const G = 4;
+    const G = 3;
 
-    // A hidden (or not-yet-laid-out) card measures 0. Retry once it has a width
-    // instead of guessing, otherwise the grid ends up narrower than the card.
+    // A hidden or not-yet-laid-out card measures 0 — retry instead of guessing.
     const W = Math.round(wrap.clientWidth);
     if (!W) {
       const tries = (wrap.__measureTries || 0) + 1;
@@ -272,12 +270,11 @@
     }
     wrap.__measureTries = 0;
 
-    // Quoted posts always get one full-width image.
     if (options.quote) {
       const it = items[0];
       const ratio = it.width && it.height ? it.height / it.width : 0.56;
-      const h = Math.max(70, Math.min(Math.round(W * ratio), 300));
-      wrap.appendChild(coverCell(it.src, W, h, 12, 0, 0, it));
+      const h = Math.max(60, Math.min(Math.round(W * ratio), 280));
+      wrap.appendChild(coverCell(it.src, W, h, 0, 0, it));
       return;
     }
 
@@ -285,9 +282,9 @@
       const list = state.layout === 'waterfall' ? items : items.slice(0, 1);
       list.forEach((it, i) => {
         const ratio = it.width && it.height ? it.height / it.width : 0.56;
-        const cap = list.length === 1 ? 430 : 620;
-        const h = Math.max(120, Math.min(Math.round(W * ratio), cap));
-        wrap.appendChild(coverCell(it.src, W, h, 14, 0, i === list.length - 1 ? 0 : 8, it));
+        const cap = list.length === 1 ? 420 : 600;
+        const h = Math.max(110, Math.min(Math.round(W * ratio), cap));
+        wrap.appendChild(coverCell(it.src, W, h, 0, i === list.length - 1 ? 0 : 7, it));
       });
       return;
     }
@@ -298,22 +295,21 @@
     if (n === 2) {
       const cw = Math.floor((W - G) / 2);
       const ch = Math.round(cw * 0.94);
-      cells.push(coverCell(items[0].src, cw, ch, 14, G, 0, items[0]));
-      cells.push(coverCell(items[1].src, cw, ch, 14, 0, 0, items[1]));
+      cells.push(coverCell(items[0].src, cw, ch, G, 0, items[0]));
+      cells.push(coverCell(items[1].src, cw, ch, 0, 0, items[1]));
     } else if (n === 3) {
       const lw = Math.round((W - G) * 0.61);
       const rw = W - G - lw;
       const total = Math.round((W - G) * 0.56);
       const rh = Math.floor((total - G) / 2);
-      cells.push(coverCell(items[0].src, lw, rh * 2 + G, 14, G, 0, items[0]));
-      cells.push(coverCell(items[1].src, rw, rh, 14, 0, G, items[1]));
-      cells.push(coverCell(items[2].src, rw, rh, 14, 0, 0, items[2]));
+      cells.push(coverCell(items[0].src, lw, rh * 2 + G, G, 0, items[0]));
+      cells.push(coverCell(items[1].src, rw, rh, 0, G, items[1]));
+      cells.push(coverCell(items[2].src, rw, rh, 0, 0, items[2]));
     } else {
       const cw = Math.floor((W - G) / 2);
       const ch = Math.round(cw * 0.82);
       for (let i = 0; i < 4; i++) {
-        const rightCol = i % 2 === 1;
-        cells.push(coverCell(items[i].src, cw, ch, 14, rightCol ? 0 : G, i < 2 ? G : 0, items[i]));
+        cells.push(coverCell(items[i].src, cw, ch, i % 2 === 1 ? 0 : G, i < 2 ? G : 0, items[i]));
       }
     }
 
@@ -322,9 +318,11 @@
 
   /* ── card ─────────────────────────────────────────────────────────────── */
 
+  const CARD_VARS = ['--c-bg', '--c-fg', '--c-muted', '--c-line', '--c-edge', '--c-quote'];
+
   function applyCardStyle(cardEl) {
     cardEl.className = 'card';
-    ['--c-bg', '--c-fg', '--c-muted', '--c-line', '--c-quote'].forEach((p) => cardEl.style.removeProperty(p));
+    CARD_VARS.forEach((p) => cardEl.style.removeProperty(p));
 
     const mode = state.card.mode;
     if (mode === 'custom') {
@@ -333,8 +331,9 @@
       cardEl.style.setProperty('--c-fg', pal.fg);
       cardEl.style.setProperty('--c-muted', pal.muted);
       cardEl.style.setProperty('--c-line', pal.line);
+      cardEl.style.setProperty('--c-edge', pal.edge);
       cardEl.style.setProperty('--c-quote', pal.quote);
-    } else if (mode !== 'light') {
+    } else if (mode === 'cream' || mode === 'ink') {
       cardEl.classList.add('card--' + mode);
     }
   }
@@ -342,10 +341,10 @@
   function buildCard(tweet) {
     let core = tweet;
     let reposter = null;
-    if (tweet.retweeted_status) {           // legacy shape
+    if (tweet.retweeted_status) {
       core = tweet.retweeted_status;
       reposter = tweet.author;
-    } else if (tweet.reposted_by) {         // current shape
+    } else if (tweet.reposted_by) {
       reposter = tweet.reposted_by;
     }
 
@@ -353,18 +352,16 @@
     const card = frag.querySelector('.card');
     const author = core.author || {};
 
-    // "Reposted by …"
     const ctx = card.querySelector('.card__context');
     if (reposter && reposter.name) {
       ctx.hidden = false;
       ctx.innerHTML =
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
         'stroke-linecap="round" stroke-linejoin="round"><path d="m17 1 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>' +
         '<path d="m7 23-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
       ctx.appendChild(document.createTextNode(t('retweetedBy') + ' ' + reposter.name));
     }
 
-    // identity
     card.querySelector('.card__name').textContent = author.name || '—';
 
     const verified = (author.verification && author.verification.verified) || author.verified;
@@ -376,10 +373,8 @@
 
     if (author.avatar_url) loadImage(card.querySelector('.card__avatar'), author.avatar_url);
 
-    // body
     card.querySelector('.card__text').textContent = core.text || '';
 
-    // quote
     if (core.quote) {
       const q = core.quote;
       const qa = q.author || {};
@@ -390,7 +385,6 @@
       if (qa.avatar_url) loadImage(card.querySelector('.card__quote-avatar'), qa.avatar_url);
     }
 
-    // stats
     card.querySelector('.stat-replies').textContent = fmtCount(core.replies) || '0';
     card.querySelector('.stat-retweets').textContent = fmtCount(core.retweets) || '0';
     card.querySelector('.stat-likes').textContent = fmtCount(core.likes) || '0';
@@ -403,44 +397,22 @@
     return { card, core };
   }
 
-  function parentGap(parentUser, parentId) {
+  function parentGap(user, id) {
     const gap = document.createElement('div');
     gap.className = 'thread-gap';
 
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'parent-btn';
-    btn.dataset.user = parentUser;
-    btn.dataset.id = parentId;
+    btn.dataset.user = user;
+    btn.dataset.id = id;
     btn.innerHTML =
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
       'stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
     btn.appendChild(document.createTextNode(t('showParentTweet')));
 
     gap.appendChild(btn);
     return gap;
-  }
-
-  /* Mounts a tweet (and its "show parent" affordance) into the capture area. */
-  function mountTweet(tweet, before) {
-    const { card, core } = buildCard(tweet);
-    const capture = dom.capture;
-    const nodes = [];
-
-    if (core.replying_to && core.replying_to_status) {
-      nodes.push(parentGap(core.replying_to, core.replying_to_status));
-    }
-    nodes.push(card);
-
-    const anchor = before || null;
-    nodes.forEach((n) => capture.insertBefore(n, anchor));
-
-    // Media is sized in px, so it can only be measured once the card is laid out.
-    card.__media = core.media;
-    card.__quoteMedia = core.quote ? core.quote.media : null;
-    renderCardMedia(card);
-
-    return { card, core, nodes };
   }
 
   function renderCardMedia(card) {
@@ -454,10 +426,161 @@
     dom.capture.querySelectorAll('.card').forEach(renderCardMedia);
   }
 
+  function mountTweet(tweet, before) {
+    const { card, core } = buildCard(tweet);
+    const nodes = [];
+
+    if (core.replying_to && core.replying_to_status) {
+      nodes.push(parentGap(core.replying_to, core.replying_to_status));
+    }
+    nodes.push(card);
+
+    nodes.forEach((n) => dom.capture.insertBefore(n, before || null));
+
+    card.__media = core.media;
+    card.__quoteMedia = core.quote ? core.quote.media : null;
+    renderCardMedia(card);
+
+    return { card, core };
+  }
+
   function clearCapture() {
     dom.capture.innerHTML = '';
     watermarkEl = null;
     state.root = null;
+  }
+
+  /* ── background ───────────────────────────────────────────────────────── */
+
+  function applyBackground() {
+    const p = BG_PRESETS[state.bg.preset];
+    const [a, b] = state.bg.colors;
+    const cs = dom.capture.style;
+
+    if (p && p.tile) {
+      cs.backgroundImage = tileUrl(p.tile.w, p.tile.h, p.tile.svg);
+      cs.backgroundSize = p.tile.w + 'px ' + p.tile.h + 'px';
+      cs.backgroundColor = p.bg;
+    } else {
+      // Hard two-colour split, not a soft blend — a printed colour block.
+      cs.backgroundImage = `linear-gradient(115deg, ${a} 0, ${a} 62%, ${b} 62%, ${b} 100%)`;
+      cs.backgroundSize = 'auto';
+      cs.backgroundColor = '';
+    }
+    cs.backgroundRepeat = 'repeat';
+
+    const wmBase = p && p.wm ? p.wm : (luma(a) > 0.42 ? 'rgba(17,17,17,0.42)' : 'rgba(255,255,255,0.5)');
+    cs.setProperty('--wm', wmBase);
+  }
+
+  function swatchFor(preset, i) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'swatch';
+    b.title = preset.name;
+    b.dataset.index = i;
+
+    if (preset.tile) {
+      b.style.backgroundImage = tileUrl(preset.tile.w, preset.tile.h, preset.tile.svg);
+      b.style.backgroundSize = preset.tile.w + 'px ' + preset.tile.h + 'px';
+      b.style.backgroundColor = preset.bg;
+    } else {
+      b.style.background = preset.bg;
+    }
+
+    b.addEventListener('click', () => selectBg(i));
+    return b;
+  }
+
+  function selectBg(i) {
+    state.bg.preset = i;
+    const p = BG_PRESETS[i];
+    state.bg.colors = [p.bg, p.bg];
+    dom.bgColor1.value = p.bg;
+    dom.bgColor2.value = p.bg;
+    dom.customBg.hidden = true;
+    applyBackground();
+    markSwatch(dom.bgSwatches, (s) => s.dataset.index === String(i));
+  }
+
+  function markSwatch(container, predicate) {
+    container.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('is-active', predicate(s)));
+  }
+
+  function buildSwatches() {
+    dom.bgSwatches.innerHTML = '';
+    BG_PRESETS.forEach((p, i) => dom.bgSwatches.appendChild(swatchFor(p, i)));
+
+    const custom = document.createElement('button');
+    custom.type = 'button';
+    custom.className = 'swatch swatch--custom';
+    custom.title = '自定义';
+    custom.dataset.index = 'custom';
+    custom.textContent = '+';
+    custom.addEventListener('click', () => {
+      state.bg.preset = -1;
+      dom.customBg.hidden = false;
+      markSwatch(dom.bgSwatches, (s) => s.dataset.index === 'custom');
+      applyBackground();
+    });
+    dom.bgSwatches.appendChild(custom);
+
+    dom.cardSwatches.innerHTML = '';
+    CARD_PRESETS.forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.title = p.id;
+      b.dataset.mode = p.mode;
+      b.style.background = p.preview;
+      b.addEventListener('click', () => selectCard(p.mode, p.preview));
+      dom.cardSwatches.appendChild(b);
+    });
+
+    const cc = document.createElement('button');
+    cc.type = 'button';
+    cc.className = 'swatch swatch--custom';
+    cc.title = '自定义';
+    cc.dataset.mode = 'custom';
+    cc.textContent = '+';
+    cc.addEventListener('click', () => selectCard('custom', dom.cardColor.value));
+    dom.cardSwatches.appendChild(cc);
+  }
+
+  function selectCard(mode, color) {
+    state.card.mode = mode;
+    state.card.color = color || state.card.color;
+    dom.customCard.hidden = mode !== 'custom';
+    if (mode === 'custom') {
+      dom.cardColor.value = state.card.color;
+      markSwatch(dom.cardSwatches, (s) => s.dataset.mode === 'custom');
+    } else {
+      markSwatch(dom.cardSwatches, (s) => s.dataset.mode === mode);
+    }
+    dom.capture.querySelectorAll('.card').forEach(applyCardStyle);
+  }
+
+  /* Radio-style spec list: the trailing <b> shows ● or ○. */
+  function initSpec(el, onChange) {
+    const buttons = Array.from(el.querySelectorAll('button'));
+
+    function sync(value) {
+      buttons.forEach((b) => {
+        const on = b.dataset.value === String(value);
+        b.setAttribute('aria-pressed', String(on));
+        const mark = b.querySelector('b');
+        if (mark) mark.textContent = on ? '●' : '○';
+      });
+    }
+
+    buttons.forEach((b) => {
+      b.addEventListener('click', () => {
+        sync(b.dataset.value);
+        if (onChange) onChange(b.dataset.value);
+      });
+    });
+
+    return sync;
   }
 
   /* ── export ───────────────────────────────────────────────────────────── */
@@ -466,11 +589,7 @@
     if (!watermarkEl) {
       watermarkEl = document.createElement('div');
       watermarkEl.className = 'capture__watermark';
-      watermarkEl.innerHTML =
-        '<svg viewBox="0 0 32 32" fill="none">' +
-        '<rect width="32" height="32" rx="9.5" fill="#fff"/>' +
-        '<path d="M11.2 11.2 20.8 20.8M20.8 11.2 11.2 20.8" stroke="#0a0a0c" stroke-width="3" stroke-linecap="round"/>' +
-        '</svg><span>XSnap</span>';
+      watermarkEl.textContent = 'XSnap';
       dom.capture.appendChild(watermarkEl);
     }
     watermarkEl.hidden = !state.watermark;
@@ -496,7 +615,7 @@
       await nextFrame();
       await nextFrame();
 
-      const canvas = await html2canvas(dom.capture, {
+      return await html2canvas(dom.capture, {
         scale: state.quality,
         useCORS: true,
         allowTaint: false,
@@ -504,7 +623,6 @@
         logging: false,
         imageTimeout: 20000
       });
-      return canvas;
     } catch (err) {
       console.error(err);
       toast('Render failed — ' + err.message, 'error');
@@ -512,7 +630,7 @@
     } finally {
       dom.capture.classList.remove('is-capturing');
       dom.capture.classList.remove('is-hide-stats');
-      if (watermarkEl) watermarkEl.hidden = true;
+      if (watermarkEl) watermarkEl.hidden = !state.watermark;
       refreshAllMedia();
     }
   }
@@ -523,9 +641,7 @@
     return `XSnap-${a}-${id}.png`;
   }
 
-  function canvasToBlob(canvas) {
-    return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
-  }
+  const canvasToBlob = (c) => new Promise((r) => c.toBlob(r, 'image/png'));
 
   async function download() {
     dom.downloadBtn.disabled = true;
@@ -568,160 +684,48 @@
     }
   }
 
-  /* ── background & card controls ───────────────────────────────────────── */
-
-  function applyBackground() {
-    dom.capture.style.backgroundImage =
-      `linear-gradient(135deg, ${state.bg.colors[0]}, ${state.bg.colors[1]})`;
-  }
-
-  function buildSwatches() {
-    dom.bgSwatches.innerHTML = '';
-    BG_PRESETS.forEach((p, i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'swatch';
-      b.title = p.id;
-      b.dataset.index = i;
-      b.style.background = `linear-gradient(135deg, ${p.colors[0]}, ${p.colors[1]})`;
-      b.addEventListener('click', () => selectBgPreset(i));
-      dom.bgSwatches.appendChild(b);
-    });
-
-    const custom = document.createElement('button');
-    custom.type = 'button';
-    custom.className = 'swatch swatch--custom';
-    custom.title = 'Custom';
-    custom.dataset.index = 'custom';
-    custom.innerHTML =
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
-      '<path d="M12 5v14M5 12h14"/></svg>';
-    custom.addEventListener('click', () => selectBgCustom());
-    dom.bgSwatches.appendChild(custom);
-
-    dom.cardSwatches.innerHTML = '';
-    CARD_PRESETS.forEach((p) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'swatch';
-      b.title = p.id;
-      b.dataset.mode = p.mode;
-      b.style.background = p.preview;
-      b.addEventListener('click', () => selectCardPreset(p.mode, p.preview));
-      dom.cardSwatches.appendChild(b);
-    });
-
-    const cc = document.createElement('button');
-    cc.type = 'button';
-    cc.className = 'swatch swatch--custom';
-    cc.title = 'Custom';
-    cc.dataset.mode = 'custom';
-    cc.innerHTML =
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
-      '<path d="M12 5v14M5 12h14"/></svg>';
-    cc.addEventListener('click', () => selectCardPreset('custom', dom.cardColor.value));
-    dom.cardSwatches.appendChild(cc);
-  }
-
-  function markSwatch(container, predicate) {
-    container.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('is-active', predicate(s)));
-  }
-
-  function selectBgPreset(i) {
-    state.bg.colors = BG_PRESETS[i].colors.slice();
-    dom.bgColor1.value = state.bg.colors[0];
-    dom.bgColor2.value = state.bg.colors[1];
-    dom.customBg.hidden = true;
-    applyBackground();
-    markSwatch(dom.bgSwatches, (s) => s.dataset.index === String(i));
-  }
-
-  function selectBgCustom() {
-    state.bg.colors = [dom.bgColor1.value, dom.bgColor2.value];
-    dom.customBg.hidden = false;
-    applyBackground();
-    markSwatch(dom.bgSwatches, (s) => s.dataset.index === 'custom');
-  }
-
-  function selectCardPreset(mode, color) {
-    state.card.mode = mode;
-    state.card.color = color || state.card.color;
-    dom.customCard.hidden = mode !== 'custom';
-    if (mode === 'custom') {
-      dom.cardColor.value = state.card.color;
-      markSwatch(dom.cardSwatches, (s) => s.dataset.mode === 'custom');
-    } else {
-      markSwatch(dom.cardSwatches, (s) => s.dataset.mode === mode);
-    }
-    dom.capture.querySelectorAll('.card').forEach(applyCardStyle);
-  }
-
-  function initSegmented(el, onPick) {
-    const buttons = Array.from(el.querySelectorAll('button'));
-    el.dataset.count = String(buttons.length);
-
-    const sync = (value) => {
-      const i = buttons.findIndex((b) => b.dataset.value === String(value));
-      el.dataset.active = String(Math.max(0, i));
-      buttons.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.value === String(value))));
-    };
-
-    buttons.forEach((b) => {
-      b.addEventListener('click', () => {
-        sync(b.dataset.value);
-        onPick(b.dataset.value);
-      });
-    });
-    return sync;
-  }
-
   /* ── flow ─────────────────────────────────────────────────────────────── */
 
-  function showEditor() {
-    dom.landing.hidden = true;
-    dom.editor.hidden = false;
-    dom.backBtn.hidden = false;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  function showPlate(tweet, core) {
+    dom.empty.hidden = true;
+    dom.plate.hidden = false;
+
+    const handle = core.author && core.author.screen_name ? '@' + core.author.screen_name : '';
+    const date = fmtDate(core.created_at);
+    dom.caption.textContent = [handle, date].filter(Boolean).join(' · ');
   }
 
-  function showLanding() {
-    dom.editor.hidden = true;
-    dom.landing.hidden = false;
-    dom.backBtn.hidden = true;
-    if (watermarkEl) watermarkEl.remove();
-    watermarkEl = null;
-    clearCapture();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    dom.urlInput.focus();
-  }
-
-  async function generate(input, opts) {
+  async function generate(input) {
     const parsed = parseTweetUrl(input);
     if (!parsed) {
       toast(t('toastInvalidLink'), 'error');
       return;
     }
 
-    const quiet = opts && opts.quiet;
-    if (!dom.editor.hidden || dom.capture.querySelector('.card')) clearCapture();
     dom.composer.classList.add('is-busy');
     dom.fetchBtn.disabled = true;
-    if (!quiet) toast(t('toastFetch'), 'info');
+    toast(t('toastFetch'), 'info');
 
     try {
       const tweet = await fetchTweet(parsed.user, parsed.id);
 
-      // The card is measured with clientWidth, so it has to be visible first.
-      dom.editor.hidden = false;
-      mountTweet(tweet);
-      state.root = tweet;
+      clearCapture();
+      dom.plate.hidden = false;
+      dom.empty.hidden = true;
 
-      if (!quiet) showEditor();
+      const { core } = mountTweet(tweet);
+      state.root = tweet;
+      ensureWatermark();
+      showPlate(tweet, core);
+
       toast(t('toastSuccess'), 'success');
     } catch (err) {
       console.error(err);
       toast(t('toastFailure') + (err.message || err), 'error');
-      if (!dom.capture.querySelector('.card')) dom.editor.hidden = true;
+      if (!dom.capture.querySelector('.card')) {
+        dom.plate.hidden = true;
+        dom.empty.hidden = false;
+      }
     } finally {
       dom.composer.classList.remove('is-busy');
       dom.fetchBtn.disabled = false;
@@ -729,19 +733,16 @@
   }
 
   async function loadParent(btn) {
-    const user = btn.dataset.user;
-    const id = btn.dataset.id;
-    if (!user || !id) return;
+    if (!btn.dataset.user || !btn.dataset.id) return;
 
     btn.disabled = true;
     const label = btn.textContent;
     btn.textContent = t('loadingParent');
 
     try {
-      const tweet = await fetchTweet(user, id);
+      const tweet = await fetchTweet(btn.dataset.user, btn.dataset.id);
       const gap = btn.closest('.thread-gap');
-      const anchor = gap || btn.closest('.card');
-      mountTweet(tweet, anchor);
+      mountTweet(tweet, gap || btn.closest('.card'));
       if (gap) gap.remove();
       refreshAllMedia();
     } catch (err) {
@@ -755,7 +756,6 @@
   /* ── wiring ───────────────────────────────────────────────────────────── */
 
   function bind() {
-    // landing form
     dom.composer.addEventListener('submit', (e) => {
       e.preventDefault();
       generate(dom.urlInput.value);
@@ -766,23 +766,21 @@
       generate(EXAMPLE);
     });
 
-    dom.backBtn.addEventListener('click', showLanding);
-
-    // panel
     dom.shuffleBg.addEventListener('click', () => {
       let i = Math.floor(Math.random() * BG_PRESETS.length);
-      const active = dom.bgSwatches.querySelector('.swatch.is-active');
-      if (active && active.dataset.index === String(i)) i = (i + 1) % BG_PRESETS.length;
-      selectBgPreset(i);
+      if (i === state.bg.preset) i = (i + 1) % BG_PRESETS.length;
+      selectBg(i);
     });
 
     dom.bgColor1.addEventListener('input', () => {
+      state.bg.preset = -1;
       state.bg.colors[0] = dom.bgColor1.value;
       dom.customBg.hidden = false;
       markSwatch(dom.bgSwatches, (s) => s.dataset.index === 'custom');
       applyBackground();
     });
     dom.bgColor2.addEventListener('input', () => {
+      state.bg.preset = -1;
       state.bg.colors[1] = dom.bgColor2.value;
       dom.customBg.hidden = false;
       markSwatch(dom.bgSwatches, (s) => s.dataset.index === 'custom');
@@ -797,6 +795,16 @@
       dom.capture.querySelectorAll('.card').forEach(applyCardStyle);
     });
 
+    dom.layoutSync = initSpec(dom.layoutSeg, (v) => {
+      state.layout = v;
+      refreshAllMedia();
+    });
+    dom.qualitySync = initSpec(dom.qualitySeg, (v) => {
+      state.quality = Number(v);
+    });
+    dom.layoutSync(state.layout);
+    dom.qualitySync(state.quality);
+
     dom.optStats.addEventListener('change', () => {
       state.stats = dom.optStats.checked;
       dom.capture.classList.toggle('is-hide-stats', !state.stats);
@@ -810,47 +818,33 @@
     dom.downloadBtn.addEventListener('click', download);
     dom.copyBtn.addEventListener('click', copyImage);
 
-    // parent chain (delegated: cards come and go)
     dom.capture.addEventListener('click', (e) => {
       const btn = e.target.closest('.parent-btn');
       if (btn) loadParent(btn);
     });
 
-    // shortcuts
     document.addEventListener('keydown', (e) => {
-      const meta = e.metaKey || e.ctrlKey;
-      if (meta && e.key.toLowerCase() === 's' && !dom.editor.hidden) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        download();
+        if (dom.capture.querySelector('.card')) download();
       }
-      if (e.key === 'Escape' && !dom.editor.hidden) showLanding();
     });
 
-    // sticky topbar border
-    const onScroll = () => dom.topbar.classList.toggle('is-stuck', window.scrollY > 8);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
-
-    // media cells are sized in px, so re-measure on resize
     let resizeTimer = null;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        if (!dom.editor.hidden) refreshAllMedia();
-      }, 180);
+      resizeTimer = setTimeout(refreshAllMedia, 180);
     });
   }
 
   function collect() {
-    dom.landing = $('#landing');
-    dom.editor = $('#editor');
     dom.composer = $('#composer');
     dom.urlInput = $('#tweet-url');
     dom.fetchBtn = $('#fetch-btn');
     dom.exampleBtn = $('#example-btn');
-    dom.backBtn = $('#back-btn');
-    dom.themeToggle = $('#theme-toggle');
-    dom.topbar = $('.topbar');
+    dom.empty = $('#empty');
+    dom.plate = $('#plate');
+    dom.caption = $('#caption');
     dom.capture = $('#capture-area');
     dom.toasts = $('#toast-container');
 
@@ -875,18 +869,13 @@
   function boot() {
     collect();
     initLang();
-    initTheme();
     buildSwatches();
-    selectBgPreset(0);
-    selectCardPreset('light', '#ffffff');
-    dom.layoutSync = initSegmented(dom.layoutSeg, (v) => { state.layout = v; refreshAllMedia(); });
-    dom.qualitySync = initSegmented(dom.qualitySeg, (v) => { state.quality = Number(v); });
-    dom.layoutSync('grid');
-    dom.qualitySync('3');
+    selectBg(0);
+    selectCard('light', '#ffffff');
+
     bind();
     ensureWatermark();
 
-    // Small scripting hook — handy for embedding, and for driving the app in tests.
     window.XSnap = {
       generate,
       download,
@@ -896,9 +885,7 @@
       state
     };
 
-    // deep link: ?url=<link>
-    const params = new URLSearchParams(location.search);
-    const deep = params.get('url');
+    const deep = new URLSearchParams(location.search).get('url');
     if (deep) {
       dom.urlInput.value = deep;
       generate(deep);

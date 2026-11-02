@@ -1,274 +1,209 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
-  <title>XSnap — Turn any post into a shareable image</title>
-  <meta name="description" content="Paste any x.com or twitter.com link and get a clean, high-resolution image you can post anywhere. No screenshots. No cropping. Runs entirely in your browser.">
-  <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#fbfbfc" media="(prefers-color-scheme: light)">
+  <title>XSnap — 把一条推文排版成一张图</title>
+  <meta name="description" content="贴一个 x.com 或 twitter.com 链接，得到一张干净、高清、可以直接发出去的图。引用、串推、多图都替你处理好。全部在浏览器里完成。">
+  <meta name="theme-color" content="#f60c3e">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="XSnap">
-  <meta property="og:title" content="XSnap — Turn any post into a shareable image">
-  <meta property="og:description" content="Paste a link, get a beautiful card. Quotes, threads and media handled for you.">
+  <meta property="og:title" content="XSnap — 把一条推文排版成一张图">
+  <meta property="og:description" content="贴链接，出图。引用、串推、多图都替你处理好。">
   <meta property="og:url" content="https://maxlen727.github.io/XSnap/">
-  <meta name="twitter:card" content="summary_large_image">
+  <meta property="og:image" content="https://maxlen727.github.io/XSnap/assets/preview.jpg">
 
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="assets/favicon.svg">
-
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://api.fxtwitter.com">
   <link rel="preconnect" href="https://pbs.twimg.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
-  <div class="aurora" aria-hidden="true">
-    <span class="aurora__blob aurora__blob--a"></span>
-    <span class="aurora__blob aurora__blob--b"></span>
-    <span class="aurora__grain"></span>
-  </div>
+<div class="frame" aria-hidden="true"></div>
 
-  <header class="topbar">
-    <a class="brand" href="./" aria-label="XSnap home">
-      <span class="brand__mark" aria-hidden="true">
-        <svg viewBox="0 0 32 32" fill="none">
-          <defs>
-            <linearGradient id="brandGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#7aa2ff"/><stop offset="1" stop-color="#a78bfa"/>
-            </linearGradient>
-          </defs>
-          <rect width="32" height="32" rx="9.5" fill="url(#brandGrad)"/>
-          <path d="M11.2 11.2 20.8 20.8M20.8 11.2 11.2 20.8" stroke="#0a0a0c" stroke-width="2.7" stroke-linecap="round"/>
-        </svg>
-      </span>
-      <span class="brand__name">XSnap</span>
-    </a>
+<header class="masthead">
+  <a class="brand" href="./">
+    <svg class="brand__mark" viewBox="0 0 48 48" aria-hidden="true">
+      <path d="M8.6 7.1C17.8 6.2 30.4 6.5 39.4 6.7c.7 9.4 1 22.9.6 34-9.7.8-22.4.7-32.1.4C7 30.4 7.4 17.6 8.6 7.1Z"
+            fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
+      <path d="M15.4 15.2c5.6 5.4 11.3 11 17.1 17.2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M32.2 15.1C26.6 20.6 21.1 26.2 15.7 32.3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+    </svg>
+    <span class="brand__word">XSnap</span>
+    <span class="brand__since" data-i18n="since">始于二〇二五</span>
+  </a>
+  <p class="masthead__meta" data-i18n="masthead">贴链接 · 出图</p>
+</header>
 
-    <div class="topbar__actions">
-      <button class="btn btn--ghost btn--sm" id="back-btn" type="button" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
-        <span data-i18n="newLink">New link</span>
-      </button>
+<div class="cols">
 
-      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle color theme">
-        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
-      </button>
+  <main class="main">
 
-      <a class="icon-btn icon-btn--gh" href="https://github.com/maxlen727/XSnap" target="_blank" rel="noopener" aria-label="View source on GitHub">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.2 1.9 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.2-3.1-.1-.4-.4-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.5 1.6.2 2.7.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
-      </a>
-    </div>
-  </header>
-
-  <main class="shell">
-
-    <!-- ───────────────────────── landing ───────────────────────── -->
-    <section class="landing" id="landing">
-      <p class="eyebrow" data-i18n="eyebrow">Browser-only · nothing uploaded</p>
-
-      <h1 class="landing__title">
-        <span data-i18n="hero1">Turn any post into</span>
-        <span class="landing__title-em" data-i18n="hero2">an image worth sharing.</span>
-      </h1>
-
-      <p class="landing__sub" data-i18n="sub">
-        Paste a link. Get a clean, high-resolution card in a second — no screenshots, no cropping, no fiddling.
-      </p>
-
-      <form class="composer" id="composer" autocomplete="off" novalidate>
-        <span class="composer__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
-        </span>
+    <form class="composer" id="composer" autocomplete="off" novalidate>
+      <label class="composer__label" for="tweet-url" data-i18n="urlLabel">链接</label>
+      <div class="composer__field">
         <input id="tweet-url" type="text" inputmode="url" spellcheck="false" autocapitalize="off"
-               data-i18n-placeholder="placeholder" placeholder="Paste an x.com link…">
-        <button class="btn btn--primary composer__submit" id="fetch-btn" type="submit">
-          <span class="composer__submit-label" data-i18n="generate">Snap it</span>
-          <span class="spinner" aria-hidden="true"></span>
-        </button>
-      </form>
-
-      <div class="landing__meta">
-        <div class="chips" aria-hidden="true">
-          <span class="chip">x.com</span>
-          <span class="chip">twitter.com</span>
-          <span class="chip" data-i18n="chipQuotes">quotes</span>
-          <span class="chip" data-i18n="chipThreads">threads</span>
-        </div>
-        <button class="link-btn" id="example-btn" type="button">
-          <span data-i18n="tryExample">Try an example</span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+               data-i18n-placeholder="placeholder" placeholder="https://x.com/…">
+        <button class="btn-snap" id="fetch-btn" type="submit">
+          <span class="btn-snap__text" data-i18n="generate">生成</span>
+          <span class="btn-snap__arrow" aria-hidden="true">→</span>
         </button>
       </div>
-    </section>
+    </form>
 
-    <!-- ───────────────────────── editor ───────────────────────── -->
-    <section class="editor" id="editor" hidden>
+    <p class="composer__hint">
+      <span data-i18n="hintSupports">支持 x.com / twitter.com · 引用 · 串推 · 多图</span>
+      <button class="link-underline" id="example-btn" type="button" data-i18n="tryExample">试一个</button>
+    </p>
 
-      <div class="stage-col">
-        <div class="stage">
-          <div id="capture-area" class="capture">
-          </div>
-        </div>
-        <p class="stage__hint" id="stage-hint" data-i18n="stageHint">Tip: press ⌘/Ctrl + S to download</p>
+    <div class="stage" id="stage">
+
+      <div class="empty" id="empty">
+        <p class="empty__num" aria-hidden="true">01</p>
+        <h1 class="empty__title"><span data-i18n="emptyTitle1">把一条推文，</span><span data-i18n="emptyTitle2">排版成一张图。</span></h1>
+        <p class="empty__note" data-i18n="emptyNote">上面的框里贴一个链接。图会出现在这里，可以直接下载，或者复制到剪贴板。</p>
       </div>
 
-      <aside class="panel">
-        <div class="panel__scroll">
+      <figure class="plate" id="plate" hidden>
+        <div id="capture-area" class="capture"></div>
+        <figcaption class="caption" id="caption"></figcaption>
+      </figure>
 
-          <section class="field">
-            <div class="field__head">
-              <h2 data-i18n="bgStyle">Background</h2>
-              <button class="mini-btn" id="shuffle-bg" type="button" data-i18n="shuffle">Shuffle</button>
-            </div>
-            <div class="swatches" id="bg-swatches"></div>
-            <div class="custom-colors" id="custom-bg" hidden>
-              <label class="color-input">
-                <input type="color" id="bg-color-1" value="#89f7fe">
-                <span data-i18n="from">From</span>
-              </label>
-              <label class="color-input">
-                <input type="color" id="bg-color-2" value="#66a6ff">
-                <span data-i18n="to">To</span>
-              </label>
-            </div>
-          </section>
-
-          <section class="field">
-            <div class="field__head">
-              <h2 data-i18n="cardStyle">Card</h2>
-            </div>
-            <div class="swatches swatches--card" id="card-swatches"></div>
-            <div class="custom-colors" id="custom-card" hidden>
-              <label class="color-input color-input--wide">
-                <input type="color" id="card-color-custom" value="#ffffff">
-                <span data-i18n="cardColor">Card color</span>
-              </label>
-            </div>
-          </section>
-
-          <section class="field">
-            <div class="field__head">
-              <h2 data-i18n="layout">Media layout</h2>
-            </div>
-            <div class="segmented" id="layout-seg" role="radiogroup" aria-label="Media layout">
-              <button type="button" role="radio" data-value="grid" aria-checked="true" data-i18n="grid">Grid</button>
-              <button type="button" role="radio" data-value="waterfall" aria-checked="false" data-i18n="waterfall">Stack</button>
-              <span class="segmented__thumb" aria-hidden="true"></span>
-            </div>
-          </section>
-
-          <section class="field">
-            <div class="field__head">
-              <h2 data-i18n="quality">Export quality</h2>
-            </div>
-            <div class="segmented" id="quality-seg" role="radiogroup" aria-label="Export quality">
-              <button type="button" role="radio" data-value="2" aria-checked="false">2×</button>
-              <button type="button" role="radio" data-value="3" aria-checked="true">3×</button>
-              <button type="button" role="radio" data-value="4" aria-checked="false">4×</button>
-              <span class="segmented__thumb" aria-hidden="true"></span>
-            </div>
-          </section>
-
-          <section class="field">
-            <div class="field__head">
-              <h2 data-i18n="options">Options</h2>
-            </div>
-            <label class="switch-row">
-              <span data-i18n="showStats">Show stats</span>
-              <input type="checkbox" id="opt-stats" checked>
-              <span class="switch" aria-hidden="true"></span>
-            </label>
-            <label class="switch-row">
-              <span data-i18n="showWatermark">Show watermark</span>
-              <input type="checkbox" id="opt-watermark" checked>
-              <span class="switch" aria-hidden="true"></span>
-            </label>
-          </section>
-
-        </div>
-
-        <div class="panel__foot">
-          <button class="btn btn--primary btn--block" id="download-btn" type="button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
-            <span data-i18n="download">Download PNG</span>
-          </button>
-          <button class="btn btn--ghost btn--block" id="copy-btn" type="button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            <span data-i18n="copy">Copy image</span>
-          </button>
-        </div>
-      </aside>
-
-    </section>
+    </div>
   </main>
 
-  <footer class="foot">
-    <span data-i18n="builtBy">Built by</span>
-    <a href="https://github.com/maxlen727" target="_blank" rel="noopener">MaxLen</a>
-    <span class="foot__dot">·</span>
-    <span data-i18n="poweredBy">data from</span>
-    <a href="https://github.com/FxEmbed/FxEmbed" target="_blank" rel="noopener">FxEmbed</a>
-    <span class="foot__dot">·</span>
-    <a href="https://github.com/maxlen727/XSnap" target="_blank" rel="noopener" data-i18n="source">Source</a>
-  </footer>
+  <aside class="rail" id="rail">
 
-  <div id="toast-container" class="toasts" role="status" aria-live="polite"></div>
-
-  <!-- ───────────────────────── card template ───────────────────────── -->
-  <template id="tpl-card">
-    <article class="card">
-      <div class="card__context" hidden></div>
-
-      <header class="card__head">
-        <img class="card__avatar" alt="" loading="eager" decoding="async">
-        <div class="card__who">
-          <div class="card__line">
-            <span class="card__name"></span>
-            <span class="card__badge" hidden>
-              <svg viewBox="0 0 22 22" aria-hidden="true"><path fill="#1d9bf0" d="M20.4 5.3 8.8 16.6a1.4 1.4 0 0 1-2 0L2.4 12.3a1.4 1.4 0 0 1 2-2l3.4 3.3L18.4 3.3a1.4 1.4 0 0 1 2 2z"/></svg>
-            </span>
-          </div>
-          <div class="card__handle"></div>
-        </div>
-        <div class="card__mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 2H22l-7.1 8.1L23.2 22h-6.6l-5.2-6.8L5.5 22H2.4l7.6-8.7L1.4 2h6.8l4.7 6.2L18.9 2Zm-1.2 18h1.8L7.1 3.9H5.2L17.7 20Z"/></svg>
-        </div>
-      </header>
-
-      <p class="card__text"></p>
-
-      <div class="card__quote" hidden>
-        <header class="card__quote-head">
-          <img class="card__quote-avatar" alt="" loading="eager" decoding="async">
-          <span class="card__quote-name"></span>
-          <span class="card__quote-handle"></span>
-        </header>
-        <p class="card__quote-text"></p>
-        <div class="card__quote-media"></div>
+    <section class="group">
+      <div class="group__head">
+        <h2 data-i18n="bgStyle">背景</h2>
+        <button class="mini" id="shuffle-bg" type="button" data-i18n="shuffle">换一批</button>
       </div>
+      <div class="swatches" id="bg-swatches"></div>
+      <div class="custom-colors" id="custom-bg" hidden>
+        <label class="color-input">
+          <input type="color" id="bg-color-1" value="#f4f1ea">
+          <span data-i18n="from">起</span>
+        </label>
+        <label class="color-input">
+          <input type="color" id="bg-color-2" value="#f60c3e">
+          <span data-i18n="to">止</span>
+        </label>
+      </div>
+    </section>
 
-      <div class="card__media"></div>
+    <section class="group">
+      <div class="group__head">
+        <h2 data-i18n="cardStyle">卡片</h2>
+      </div>
+      <div class="swatches swatches--card" id="card-swatches"></div>
+      <div class="custom-colors" id="custom-card" hidden>
+        <label class="color-input color-input--wide">
+          <input type="color" id="card-color-custom" value="#ffffff">
+          <span data-i18n="cardColor">卡片颜色</span>
+        </label>
+      </div>
+    </section>
 
-      <footer class="card__stats">
-        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg><b class="stat-replies"></b></span>
-        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m17 1 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 23-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg><b class="stat-retweets"></b></span>
-        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21.2l7.8-7.7 1.1-1.1a5.5 5.5 0 0 0 0-7.8Z"/></svg><b class="stat-likes"></b></span>
-        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg><b class="stat-views"></b></span>
-      </footer>
-    </article>
-  </template>
+    <section class="group">
+      <h2 class="group__title" data-i18n="layout">多图布局</h2>
+      <ul class="spec" id="layout-seg">
+        <li><button type="button" data-value="grid" aria-pressed="true"><span data-i18n="grid">网格</span><i></i><b>●</b></button></li>
+        <li><button type="button" data-value="waterfall" aria-pressed="false"><span data-i18n="waterfall">堆叠</span><i></i><b>○</b></button></li>
+      </ul>
+    </section>
 
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.8/dist/html2canvas-pro.min.js" crossorigin="anonymous"></script>
-  <script src="assets/i18n.js" defer></script>
-  <script src="assets/main.js" defer></script>
+    <section class="group">
+      <h2 class="group__title" data-i18n="quality">导出质量</h2>
+      <ul class="spec" id="quality-seg">
+        <li><button type="button" data-value="2" aria-pressed="false"><span>2×</span><i></i><b>○</b></button></li>
+        <li><button type="button" data-value="3" aria-pressed="true"><span>3×</span><i></i><b>●</b></button></li>
+        <li><button type="button" data-value="4" aria-pressed="false"><span>4×</span><i></i><b>○</b></button></li>
+      </ul>
+    </section>
+
+    <section class="group">
+      <h2 class="group__title" data-i18n="options">选项</h2>
+      <ul class="spec" id="opt-list">
+        <li><label><span data-i18n="showStats">显示数据</span><i></i>
+          <input type="checkbox" id="opt-stats" checked><b></b></label></li>
+        <li><label><span data-i18n="showWatermark">显示水印</span><i></i>
+          <input type="checkbox" id="opt-watermark" checked><b></b></label></li>
+      </ul>
+    </section>
+
+    <section class="group group--actions">
+      <button class="btn-solid" id="download-btn" type="button" data-i18n="download">下载 PNG</button>
+      <button class="btn-line" id="copy-btn" type="button" data-i18n="copy">复制图片</button>
+      <p class="group__foot" data-i18n="kbdHint">⌘/Ctrl + S 也能下载</p>
+    </section>
+
+  </aside>
+</div>
+
+<footer class="colophon">
+  <span data-i18n="builtBy">由</span>
+  <a href="https://github.com/maxlen727" target="_blank" rel="noopener">MaxLen</a>
+  <span class="colophon__sep">·</span>
+  <span data-i18n="poweredBy">数据来自</span>
+  <a href="https://github.com/FxEmbed/FxEmbed" target="_blank" rel="noopener">FxEmbed</a>
+  <span class="colophon__sep">·</span>
+  <a href="https://github.com/maxlen727/XSnap" target="_blank" rel="noopener" data-i18n="source">源码</a>
+</footer>
+
+<div id="toast-container" class="toasts" role="status" aria-live="polite"></div>
+
+<template id="tpl-card">
+  <article class="card">
+    <div class="card__context" hidden></div>
+
+    <header class="card__head">
+      <img class="card__avatar" alt="" loading="eager" decoding="async">
+      <div class="card__who">
+        <div class="card__line">
+          <span class="card__name"></span>
+          <span class="card__badge" hidden>
+            <svg viewBox="0 0 22 22" aria-hidden="true"><path fill="#1d9bf0" d="M20.4 5.3 8.8 16.6a1.4 1.4 0 0 1-2 0L2.4 12.3a1.4 1.4 0 0 1 2-2l3.4 3.3L18.4 3.3a1.4 1.4 0 0 1 2 2z"/></svg>
+          </span>
+        </div>
+        <div class="card__handle"></div>
+      </div>
+      <div class="card__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 2H22l-7.1 8.1L23.2 22h-6.6l-5.2-6.8L5.5 22H2.4l7.6-8.7L1.4 2h6.8l4.7 6.2L18.9 2Zm-1.2 18h1.8L7.1 3.9H5.2L17.7 20Z"/></svg>
+      </div>
+    </header>
+
+    <p class="card__text"></p>
+
+    <div class="card__quote" hidden>
+      <header class="card__quote-head">
+        <img class="card__quote-avatar" alt="" loading="eager" decoding="async">
+        <span class="card__quote-name"></span>
+        <span class="card__quote-handle"></span>
+      </header>
+      <p class="card__quote-text"></p>
+      <div class="card__quote-media"></div>
+    </div>
+
+    <div class="card__media"></div>
+
+    <footer class="card__stats">
+      <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg><b class="stat-replies"></b></span>
+      <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m17 1 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 23-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg><b class="stat-retweets"></b></span>
+      <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21.2l7.8-7.7 1.1-1.1a5.5 5.5 0 0 0 0-7.8Z"/></svg><b class="stat-likes"></b></span>
+      <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg><b class="stat-views"></b></span>
+    </footer>
+  </article>
+</template>
+
+<script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.8/dist/html2canvas-pro.min.js" crossorigin="anonymous"></script>
+<script src="assets/i18n.js" defer></script>
+<script src="assets/main.js" defer></script>
 </body>
 </html>

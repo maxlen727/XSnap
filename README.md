@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src="assets/favicon.svg" alt="XSnap" width="84">
+<img src="assets/favicon.svg" alt="XSnap" width="72">
 
 # XSnap
 
-**Turn any post into an image worth sharing.**
+**把一条推文，排版成一张图。**
 
-Paste a link → get a clean, high-resolution card. No screenshots, no cropping.
+贴一个链接 → 得到一张干净、高清、可以直接发出去的图。引用、串推、多图都替你处理好。
 
-**[→ Open the live demo](https://maxlen727.github.io/XSnap/)**
+**[→ 线上使用](https://maxlen727.github.io/XSnap/)**
 
 </div>
 
@@ -16,112 +16,111 @@ Paste a link → get a clean, high-resolution card. No screenshots, no cropping.
 
 ---
 
-## What it is
+## 它是什么
 
-XSnap is a browser-only tool that turns a public Twitter/X link into a shareable
-image. Quotes, threads, multi-image layouts and stats are all handled for you.
-Nothing is uploaded anywhere — the page talks to the [FxEmbed](https://github.com/FxEmbed/FxEmbed)
-API for the data, renders the card in your browser, and hands you back a PNG.
+XSnap 是个纯浏览器的工具：把一个公开的 Twitter/X 链接变成一张适合发出去的图。
 
-It's a single static page. No build step, no framework, no bundle — `index.html`
-plus three files in `assets/`. That's the whole deploy.
+页面只跟 [FxEmbed](https://github.com/FxEmbed/FxEmbed) 要数据，卡片在你的浏览器里排版、由 `html2canvas` 栅格化成 PNG。**什么都不会上传。**
 
-## Features
+整个项目是一个静态页面 —— `index.html` 加 `assets/` 里三个文件，没有构建步骤，没有框架，没有打包。这就是全部的部署内容。
+
+## 功能
 
 | | |
 |---|---|
-| **Card styles** | Light / Dim / Dark, or any custom colour — text contrast is computed for you |
-| **Backgrounds** | 8 gradients, plus a custom two-colour picker |
-| **Media layout** | Grid or stacked, 1–4 images, cropped consistently |
-| **Quoted posts** | Rendered inline, including their own media |
-| **Threads** | Click "show post above" to walk up the reply chain, one card at a time |
-| **Export quality** | 2× / 3× / 4× |
-| **Options** | Show or hide stats, show or hide the watermark |
-| **Output** | Download PNG, or copy straight to the clipboard |
-| **Interface** | English / 中文, automatic light–dark theme |
-| **Keyboard** | `⌘/Ctrl + S` downloads, `Esc` goes back |
+| **背景** | 6 种纸面底色（纸/白/墨/胭脂/粉/沙）、3 种印刷纹理（点阵/方格/斜纹）、任意双色硬分割 |
+| **卡片** | 白纸 / 米纸 / 墨卡，或者任意底色 —— 文字对比度自动算 |
+| **多图** | 1–4 张，网格或堆叠，统一裁切 |
+| **引用推** | 连同它自带的图一起还原，左侧一道胭脂红竖线 |
+| **串推** | 点「显示上一条」逐层往上追，一张卡片一层 |
+| **导出** | 2× / 3× / 4×，下载 PNG 或直接复制到剪贴板 |
+| **选项** | 数据、水印各自可关 |
+| **界面** | 中英双语，跟随系统语言 |
+| **键盘** | `⌘/Ctrl + S` 下载 |
 
-Deep links work too: `?url=<post link>` opens straight into the editor.
+深链也能用：`?url=<推文链接>` 直接进到成品。
 
-## How it works
+## 设计
+
+视觉语言来自印刷品，不是网页：**胭脂红 `#F60C3E` 的整页外框**、纯白纸面、**点状细线**做所有结构分隔、目录式的点线引导、方角零阴影、细边框小方块当标签。
+
+层级靠字重和分割线建立，不靠渐变、圆角和光斑 —— 全站只有一种强调色，其余全是黑与灰。
+
+移动端外框收成顶部红色条，和桌面同一套语言。
+
+## 实现
 
 ```
-x.com link  →  api.fxtwitter.com/{user}/status/{id}  →  card DOM  →  html2canvas-pro  →  PNG
+x.com 链接  →  api.fxtwitter.com/{user}/status/{id}  →  卡片 DOM  →  html2canvas-pro  →  PNG
 ```
 
-The card is real DOM, not canvas drawing — so the layout you see is the layout you
-get, and styling it is ordinary CSS.
+卡片是真的 DOM，不是画在 canvas 上 —— 所以所见即所得，调样式就是普通 CSS。
 
-### Two things worth knowing before you touch the renderer
+### 动渲染器之前必须知道的三个坑
 
-`html2canvas` re-implements CSS layout rather than using the browser's, and two
-gaps will bite you:
+`html2canvas` 自己重实现了一遍 CSS 布局，不走浏览器的。三处它会静默出错：
 
-1. **It ignores `object-fit`.** Images come out stretched. So every media cell is
-   an `overflow:hidden` box with an absolutely positioned `<img>` whose size and
-   offset are computed from the photo's real dimensions (`coverCell()` in `main.js`).
-2. **It ignores `gap` on flex containers.** Spacing between cells is done with
-   explicit margins.
+1. **不认 `object-fit`。** 图会被拉变形。所以每个图片格子是一个 `overflow:hidden` 的盒子，
+   里面一张绝对定位的 `<img>`，尺寸和偏移按图片真实宽高手算（`main.js` 里的 `coverCell()`）。
+2. **不认 flex 容器的 `gap`。** 间距全部用 margin 做。
+3. **不认平铺的 CSS 渐变。** 用 `background-size` 平铺的 `radial-gradient` / `repeating-linear-gradient`
+   在页面上看得见，导出后消失。所以纹理改用 **SVG data URI 图块**（`tileUrl()`）—— 那是图片背景，能过。
 
-Also: media cells are sized in **pixels**, not percentages, which is why the card
-has to be visible and laid out before media is measured. If a card is rendered
-while hidden it measures `0` and retries on the next frame.
+另外：图片格子的宽高是**像素**，所以卡片必须已经显示并完成布局才能测量。
+在隐藏状态下渲染会量到 `0`，代码会在下一帧重试。
 
-## Development
+## 开发
 
 ```bash
-python3 -m http.server 8080   # or any static server
+python3 -m http.server 8080   # 或者任何静态服务器
 # → http://localhost:8080
 ```
 
-There's nothing to install and nothing to compile. Edit a file, reload.
+没有依赖，没有编译。改完刷新即可。
 
-For scripting or embedding, the page exposes a small hook:
+需要脚本化或嵌进别的页面时，页面导出了一个入口：
 
 ```js
-XSnap.generate('https://x.com/user/status/123')  // load a post
-XSnap.download()                                 // save the current card
-XSnap.copyImage()                                // copy the current card
+XSnap.generate('https://x.com/user/status/123')  // 载入一条推文
+XSnap.download()                                 // 保存当前卡片
+XSnap.copyImage()                                // 复制当前卡片
 ```
 
-## Known limits
+## 已知限制
 
-- Protected accounts and deleted posts can't be fetched — that's the API, not the page.
-- Very long posts make very tall images. That's the point, but 4× on a long thread is a big file.
-- Some browser privacy modes block the CDN requests; images then fall back to an
-  [allOrigins](https://github.com/gnuns/allorigins) proxy, which is slower.
-- X keeps changing its markup; when the API shape moves, `buildCard()` is where to look.
+- 保护账号和已删除的推文取不到 —— 这是接口的限制，不是页面的。
+- 很长的推文 = 很高的图。这是功能，但 4× 的九图串推会是个大文件。
+- 某些隐私模式会拦掉 CDN 请求，图片会退到 [allOrigins](https://github.com/gnuns/allorigins)
+  代理重试，会慢一点。
+- X 的接口结构时有变化；真变了，先看 `buildCard()`。
 
-## Credits
+## 致谢
 
-- **[FxEmbed / FxEmbed](https://github.com/FxEmbed/FxEmbed)** — the data source. This project is a front-end for it.
-- **[html2canvas-pro](https://github.com/yorickshan/html2canvas-pro)** — DOM → canvas, with modern colour support.
-- **[allOrigins](https://github.com/gnuns/allorigins)** — proxy fallback when images get blocked.
-- **[Inter](https://rsms.me/inter/)** & **[JetBrains Mono](https://www.jetbrains.com/lp/mono/)** — type.
-- **Gemini** — wrote the original version of this, back in the early days of vibe coding.
+- **[FxEmbed / FxEmbed](https://github.com/FxEmbed/FxEmbed)** —— 数据来源，这个项目本质是它的前端。
+- **[html2canvas-pro](https://github.com/yorickshan/html2canvas-pro)** —— DOM 转 canvas，支持现代颜色函数。
+- **[allOrigins](https://github.com/gnuns/allorigins)** —— 图片被拦时的代理兜底。
+- **[Archivo](https://fonts.google.com/specimen/Archivo)** / **[Inter](https://rsms.me/inter/)** —— 字体。
+- **Gemini** —— 最早那一版是它写的。
 
-## Changelog
+## 更新日志
 
-### 2025 · Redesign
+### 重做
 
-A ground-up rebuild of the interface. Same job, done properly this time.
+界面推倒重来。功能没减，层次重新梳过。
 
-- New visual language: one design system, light and dark from the same tokens
-- Editor is now a two-pane tool — preview on the left, controls on the right
-- Card rebuilt: verified badge, post date, real icons instead of emoji, better
-  media grids, larger type, proper quoted-post layout
-- Custom card colours now compute text contrast, so light cards on dark colours
-  (and the reverse) stay readable
-- `html2canvas` → `html2canvas-pro`; images are cropped by hand instead of being
-  stretched by the missing `object-fit`
-- Export quality selector (2× / 3× / 4×), copy-to-clipboard, watermark and stats toggles
-- Sticky action bar, keyboard shortcuts, `?url=` deep links, toast notifications
-- Responsive down to phone width; the whole app fits on one screen again
+- 一套印刷品语言：胭脂红外框、点状细线、目录式点线引导、方角零阴影
+- 背景从 2018 年的柔和渐变换成纸面底色 + 印刷纹理 + 双色硬分割
+- 卡片去掉圆角和投影，改成细边框的「剪报」；加认证徽章、发帖日期、真图标
+- 自定义底色自动算文字对比度，深色卡不会出现看不清的字
+- `html2canvas` → `html2canvas-pro`；图片裁切改成手算，不再被拉变形
+- 纹理改用 SVG 图块，解决平铺渐变导出后消失的问题
+- 导出质量 2×/3×/4×、复制到剪贴板、水印与数据开关
+- 单页布局：输入框常驻顶部，结果就地出现，不再有跳转页
+- 响应式到手机，移动端外框收成顶部红条
 
-### 2025-08-11 · Previous version
+### 2025-08-11
 
-Quoted post rendering, reply-chain walking, stats toggle, mobile pass, and a pile
-of `main.js` fixes. Also written by Gemini.
+引用推渲染、回复链回溯、数据开关、移动端适配，以及 `main.js` 的一批修复。也是 Gemini 写的。
 
 ---
 
