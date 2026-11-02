@@ -1,439 +1,913 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // --- 预设颜色定义 ---
-    const PRESET_GRADIENTS = [
-        { name: 'Ocean', colors: ['#89f7fe', '#66a6ff'] }, { name: 'Sunset', colors: ['#ffecd2', '#fcb69f'] },
-        { name: 'Lush', colors: ['#a8e063', '#56ab2f'] }, { name: 'Amethyst', colors: ['#8e2de2', '#4a00e0'] },
-        { name: 'Graphite', colors: ['#434343', '#000000'] }, { name: 'Custom', colors: [] }
-    ];
-    const PRESET_CARD_COLORS = [
-        { name: 'White', color: '#ffffff', mode: 'light' }, { name: 'Ink', color: '#1f2937', mode: 'dark' },
-        { name: 'Stone', color: '#f5f5f4', mode: 'light' }, { name: 'Custom', color: '', mode: 'custom' }
-    ];
+/* ==========================================================================
+   XSnap
+   Static, no build step. Data from FxEmbed, pixels from html2canvas-pro.
 
-    // --- DOM 元素引用 ---
-    const dom = {
-        welcomeScreen: document.getElementById('welcome-screen'), editorScreen: document.getElementById('editor-screen'),
-        tweetUrlInput: document.getElementById('tweet-url'), fetchBtn: document.getElementById('fetch-btn'),
-        bgSwatches: document.getElementById('bg-swatches'), cardSwatches: document.getElementById('card-swatches'),
-        customBgPicker: document.getElementById('custom-bg-picker'), customCardPicker: document.getElementById('custom-card-picker'),
-        bgColor1: document.getElementById('bg-color-1'), bgColor2: document.getElementById('bg-color-2'),
-        cardColorCustom: document.getElementById('card-color-custom'),
-        downloadBtn: document.getElementById('download-btn'), toastContainer: document.getElementById('toast-container'),
-        captureArea: document.getElementById('capture-area'),
-        tweetCardTemplate: document.getElementById('tweet-card-template')
+   Two rendering rules that matter, because the export is the product:
+   · html2canvas ignores `gap` on flex containers → spacing is done with margins
+   · html2canvas ignores `object-fit`             → images are cropped by hand
+   ========================================================================== */
+'use strict';
+
+(function () {
+  const API = 'https://api.fxtwitter.com';
+  const PROXY = 'https://api.allorigins.win/raw?url=';
+  const EXAMPLE = 'https://x.com/elonmusk/status/1949938925163962634';
+  const THEME_KEY = 'xsnap.theme';
+
+  const BG_PRESETS = [
+    { id: 'ocean',    colors: ['#89f7fe', '#66a6ff'] },
+    { id: 'sunset',   colors: ['#ffecd2', '#fcb69f'] },
+    { id: 'amethyst', colors: ['#8e2de2', '#4a00e0'] },
+    { id: 'mint',     colors: ['#d4fc79', '#96e6a1'] },
+    { id: 'lush',     colors: ['#a8e063', '#56ab2f'] },
+    { id: 'citrus',   colors: ['#f6d365', '#fda085'] },
+    { id: 'dusk',     colors: ['#4b6cb7', '#182848'] },
+    { id: 'graphite', colors: ['#434343', '#000000'] }
+  ];
+
+  const CARD_PRESETS = [
+    { id: 'light', mode: 'light', preview: '#ffffff' },
+    { id: 'dim',   mode: 'dim',   preview: '#15202b' },
+    { id: 'dark',  mode: 'dark',  preview: '#000000' }
+  ];
+
+  const state = {
+    lang: 'en',
+    bg: { colors: BG_PRESETS[0].colors.slice() },
+    card: { mode: 'light', color: '#ffffff' },
+    layout: 'grid',
+    quality: 3,
+    stats: true,
+    watermark: true,
+    root: null
+  };
+
+  const dom = {};
+  let proxyNotified = false;
+  let watermarkEl = null;
+
+  /* ── tiny helpers ─────────────────────────────────────────────────────── */
+
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const t = (key) => (i18n[state.lang] && i18n[state.lang][key]) || i18n.en[key] || key;
+  const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+  function fmtCount(n) {
+    if (n == null || isNaN(n)) return null;
+    n = Number(n);
+    if (n < 1000) return String(n);
+    if (n < 10000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    if (n < 1e6) return Math.round(n / 1000) + 'K';
+    if (n < 1e9) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    return (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
+  }
+
+  function fmtDate(raw) {
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    try {
+      return new Intl.DateTimeFormat(state.lang === 'zh' ? 'zh-CN' : 'en-US', {
+        year: 'numeric', month: 'short', day: 'numeric'
+      }).format(d);
+    } catch (e) {
+      return d.toISOString().slice(0, 10);
+    }
+  }
+
+  function hexToRgb(hex) {
+    let h = String(hex).replace('#', '').trim();
+    if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+    const n = parseInt(h, 16);
+    if (isNaN(n)) return { r: 255, g: 255, b: 255 };
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+
+  /* Returns a full card palette that stays readable on an arbitrary bg. */
+  function cardPalette(hex) {
+    const { r, g, b } = hexToRgb(hex);
+    const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const luma = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    if (luma > 0.42) {
+      return {
+        fg: '#0f1419', muted: '#536471',
+        line: 'rgba(15, 20, 25, 0.10)', quote: 'rgba(15, 20, 25, 0.035)'
+      };
+    }
+    return {
+      fg: '#f2f4f6', muted: 'rgba(242, 244, 246, 0.62)',
+      line: 'rgba(255, 255, 255, 0.14)', quote: 'rgba(255, 255, 255, 0.06)'
+    };
+  }
+
+  /* ── toasts ───────────────────────────────────────────────────────────── */
+
+  function toast(message, kind) {
+    const el = document.createElement('div');
+    el.className = 'toast toast--' + (kind || 'info');
+    el.textContent = message;
+    dom.toasts.appendChild(el);
+    setTimeout(() => {
+      el.classList.add('is-out');
+      setTimeout(() => el.remove(), 260);
+    }, 3600);
+    while (dom.toasts.children.length > 3) dom.toasts.firstChild.remove();
+  }
+
+  /* ── theme ────────────────────────────────────────────────────────────── */
+
+  function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (e) { /* private mode */ }
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+    document.documentElement.dataset.theme = saved || (prefersDark.matches ? 'dark' : 'light');
+
+    if (!saved) {
+      prefersDark.addEventListener('change', (e) => {
+        document.documentElement.dataset.theme = e.matches ? 'dark' : 'light';
+      });
+    }
+
+    dom.themeToggle.addEventListener('click', () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* ignore */ }
+    });
+  }
+
+  /* ── i18n ─────────────────────────────────────────────────────────────── */
+
+  function initLang() {
+    const nav = (navigator.language || 'en').slice(0, 2).toLowerCase();
+    state.lang = i18n[nav] ? nav : 'en';
+    document.documentElement.lang = state.lang;
+
+    const dict = i18n[state.lang];
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const v = dict[el.dataset.i18n];
+      if (v != null) el.textContent = v;
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+      const v = dict[el.dataset.i18nPlaceholder];
+      if (v != null) el.placeholder = v;
+    });
+  }
+
+  /* ── url → api ────────────────────────────────────────────────────────── */
+
+  function parseTweetUrl(raw) {
+    if (!raw) return null;
+    let s = String(raw).trim();
+    if (!s) return null;
+    if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+    let u;
+    try { u = new URL(s); } catch (e) { return null; }
+
+    const host = u.hostname.replace(/^(www\.|mobile\.|m\.)/i, '').toLowerCase();
+    const known = ['x.com', 'twitter.com', 'fxtwitter.com', 'vxtwitter.com', 'fixupx.com', 'fixvx.com', 'twittpr.com'];
+    if (known.indexOf(host) === -1 && !host.endsWith('.x.com') && !host.endsWith('.twitter.com')) return null;
+
+    const m = u.pathname.match(/\/(?:([A-Za-z0-9_]{1,20})\/)?status(?:es)?\/(\d+)/);
+    if (!m) return null;
+    return { user: m[1] || 'i', id: m[2] };
+  }
+
+  async function fetchTweet(user, id) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(`${API}/${user}/status/${id}`, { signal: ctrl.signal, cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      if (json.code !== 200 || !json.tweet) throw new Error(json.message || 'No tweet in response');
+      return json.tweet;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /* ── images ───────────────────────────────────────────────────────────── */
+
+  function loadImage(img, src) {
+    img.crossOrigin = 'anonymous';
+    img.onerror = () => {
+      if (img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      if (!proxyNotified) {
+        proxyNotified = true;
+        toast(t('toastProxy'), 'info');
+      }
+      img.removeAttribute('crossorigin');
+      img.src = PROXY + encodeURIComponent(src);
+    };
+    img.src = src;
+  }
+
+  /*
+   * html2canvas has no object-fit, so a "cover" crop is expressed as an
+   * absolutely positioned image with hand-computed size and offset.
+   */
+  function coverCell(src, cw, ch, radius, mr, mb, intrinsic) {
+    const cell = document.createElement('div');
+    cell.style.cssText =
+      'position:relative;flex:0 0 auto;overflow:hidden;' +
+      `width:${cw}px;height:${ch}px;border-radius:${radius}px;` +
+      `margin-right:${mr}px;margin-bottom:${mb}px;background:rgba(128,128,128,0.14)`;
+
+    const img = document.createElement('img');
+    img.alt = '';
+    img.decoding = 'async';
+
+    const iw = intrinsic && intrinsic.width ? intrinsic.width : 0;
+    const ih = intrinsic && intrinsic.height ? intrinsic.height : 0;
+
+    if (iw && ih) {
+      const scale = Math.max(cw / iw, ch / ih);
+      const w = Math.round(iw * scale);
+      const h = Math.round(ih * scale);
+      img.style.cssText =
+        'position:absolute;max-width:none;max-height:none;display:block;' +
+        `width:${w}px;height:${h}px;left:${Math.round((cw - w) / 2)}px;top:${Math.round((ch - h) / 2)}px`;
+    } else {
+      img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;';
+    }
+
+    loadImage(img, src);
+    cell.appendChild(img);
+    return cell;
+  }
+
+  /* ── media layout ─────────────────────────────────────────────────────── */
+
+  function mediaItems(media) {
+    if (!media) return [];
+    const out = [];
+    (media.photos || []).forEach((p) => {
+      out.push({ src: p.url, width: p.width, height: p.height });
+    });
+    if (!out.length && media.videos && media.videos.length) {
+      media.videos.forEach((v) => {
+        if (v.thumbnail_url) out.push({ src: v.thumbnail_url, width: v.width, height: v.height });
+      });
+    }
+    return out;
+  }
+
+  function renderMedia(media, wrap, opts) {
+    wrap.innerHTML = '';
+    const items = mediaItems(media);
+    if (!items.length) return;
+
+    const options = opts || {};
+    const G = 4;
+
+    // A hidden (or not-yet-laid-out) card measures 0. Retry once it has a width
+    // instead of guessing, otherwise the grid ends up narrower than the card.
+    const W = Math.round(wrap.clientWidth);
+    if (!W) {
+      const tries = (wrap.__measureTries || 0) + 1;
+      wrap.__measureTries = tries;
+      if (tries <= 6) requestAnimationFrame(() => renderMedia(media, wrap, opts));
+      return;
+    }
+    wrap.__measureTries = 0;
+
+    // Quoted posts always get one full-width image.
+    if (options.quote) {
+      const it = items[0];
+      const ratio = it.width && it.height ? it.height / it.width : 0.56;
+      const h = Math.max(70, Math.min(Math.round(W * ratio), 300));
+      wrap.appendChild(coverCell(it.src, W, h, 12, 0, 0, it));
+      return;
+    }
+
+    if (state.layout === 'waterfall' || items.length === 1) {
+      const list = state.layout === 'waterfall' ? items : items.slice(0, 1);
+      list.forEach((it, i) => {
+        const ratio = it.width && it.height ? it.height / it.width : 0.56;
+        const cap = list.length === 1 ? 430 : 620;
+        const h = Math.max(120, Math.min(Math.round(W * ratio), cap));
+        wrap.appendChild(coverCell(it.src, W, h, 14, 0, i === list.length - 1 ? 0 : 8, it));
+      });
+      return;
+    }
+
+    const n = Math.min(items.length, 4);
+    const cells = [];
+
+    if (n === 2) {
+      const cw = Math.floor((W - G) / 2);
+      const ch = Math.round(cw * 0.94);
+      cells.push(coverCell(items[0].src, cw, ch, 14, G, 0, items[0]));
+      cells.push(coverCell(items[1].src, cw, ch, 14, 0, 0, items[1]));
+    } else if (n === 3) {
+      const lw = Math.round((W - G) * 0.61);
+      const rw = W - G - lw;
+      const total = Math.round((W - G) * 0.56);
+      const rh = Math.floor((total - G) / 2);
+      cells.push(coverCell(items[0].src, lw, rh * 2 + G, 14, G, 0, items[0]));
+      cells.push(coverCell(items[1].src, rw, rh, 14, 0, G, items[1]));
+      cells.push(coverCell(items[2].src, rw, rh, 14, 0, 0, items[2]));
+    } else {
+      const cw = Math.floor((W - G) / 2);
+      const ch = Math.round(cw * 0.82);
+      for (let i = 0; i < 4; i++) {
+        const rightCol = i % 2 === 1;
+        cells.push(coverCell(items[i].src, cw, ch, 14, rightCol ? 0 : G, i < 2 ? G : 0, items[i]));
+      }
+    }
+
+    cells.forEach((c) => wrap.appendChild(c));
+  }
+
+  /* ── card ─────────────────────────────────────────────────────────────── */
+
+  function applyCardStyle(cardEl) {
+    cardEl.className = 'card';
+    ['--c-bg', '--c-fg', '--c-muted', '--c-line', '--c-quote'].forEach((p) => cardEl.style.removeProperty(p));
+
+    const mode = state.card.mode;
+    if (mode === 'custom') {
+      const pal = cardPalette(state.card.color);
+      cardEl.style.setProperty('--c-bg', state.card.color);
+      cardEl.style.setProperty('--c-fg', pal.fg);
+      cardEl.style.setProperty('--c-muted', pal.muted);
+      cardEl.style.setProperty('--c-line', pal.line);
+      cardEl.style.setProperty('--c-quote', pal.quote);
+    } else if (mode !== 'light') {
+      cardEl.classList.add('card--' + mode);
+    }
+  }
+
+  function buildCard(tweet) {
+    let core = tweet;
+    let reposter = null;
+    if (tweet.retweeted_status) {           // legacy shape
+      core = tweet.retweeted_status;
+      reposter = tweet.author;
+    } else if (tweet.reposted_by) {         // current shape
+      reposter = tweet.reposted_by;
+    }
+
+    const frag = document.importNode($('#tpl-card').content, true);
+    const card = frag.querySelector('.card');
+    const author = core.author || {};
+
+    // "Reposted by …"
+    const ctx = card.querySelector('.card__context');
+    if (reposter && reposter.name) {
+      ctx.hidden = false;
+      ctx.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+        'stroke-linecap="round" stroke-linejoin="round"><path d="m17 1 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>' +
+        '<path d="m7 23-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+      ctx.appendChild(document.createTextNode(t('retweetedBy') + ' ' + reposter.name));
+    }
+
+    // identity
+    card.querySelector('.card__name').textContent = author.name || '—';
+
+    const verified = (author.verification && author.verification.verified) || author.verified;
+    if (verified) card.querySelector('.card__badge').hidden = false;
+
+    const date = fmtDate(core.created_at);
+    card.querySelector('.card__handle').textContent =
+      '@' + (author.screen_name || 'unknown') + (date ? ' · ' + date : '');
+
+    if (author.avatar_url) loadImage(card.querySelector('.card__avatar'), author.avatar_url);
+
+    // body
+    card.querySelector('.card__text').textContent = core.text || '';
+
+    // quote
+    if (core.quote) {
+      const q = core.quote;
+      const qa = q.author || {};
+      card.querySelector('.card__quote').hidden = false;
+      card.querySelector('.card__quote-name').textContent = qa.name || '—';
+      card.querySelector('.card__quote-handle').textContent = '@' + (qa.screen_name || '');
+      card.querySelector('.card__quote-text').textContent = q.text || '';
+      if (qa.avatar_url) loadImage(card.querySelector('.card__quote-avatar'), qa.avatar_url);
+    }
+
+    // stats
+    card.querySelector('.stat-replies').textContent = fmtCount(core.replies) || '0';
+    card.querySelector('.stat-retweets').textContent = fmtCount(core.retweets) || '0';
+    card.querySelector('.stat-likes').textContent = fmtCount(core.likes) || '0';
+    const views = card.querySelector('.card__stats .stat:last-child');
+    const v = fmtCount(core.views);
+    if (v == null) views.remove();
+    else card.querySelector('.stat-views').textContent = v;
+
+    applyCardStyle(card);
+    return { card, core };
+  }
+
+  function parentGap(parentUser, parentId) {
+    const gap = document.createElement('div');
+    gap.className = 'thread-gap';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'parent-btn';
+    btn.dataset.user = parentUser;
+    btn.dataset.id = parentId;
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
+    btn.appendChild(document.createTextNode(t('showParentTweet')));
+
+    gap.appendChild(btn);
+    return gap;
+  }
+
+  /* Mounts a tweet (and its "show parent" affordance) into the capture area. */
+  function mountTweet(tweet, before) {
+    const { card, core } = buildCard(tweet);
+    const capture = dom.capture;
+    const nodes = [];
+
+    if (core.replying_to && core.replying_to_status) {
+      nodes.push(parentGap(core.replying_to, core.replying_to_status));
+    }
+    nodes.push(card);
+
+    const anchor = before || null;
+    nodes.forEach((n) => capture.insertBefore(n, anchor));
+
+    // Media is sized in px, so it can only be measured once the card is laid out.
+    card.__media = core.media;
+    card.__quoteMedia = core.quote ? core.quote.media : null;
+    renderCardMedia(card);
+
+    return { card, core, nodes };
+  }
+
+  function renderCardMedia(card) {
+    if (card.__media !== undefined) renderMedia(card.__media, card.querySelector('.card__media'));
+    if (card.__quoteMedia) {
+      renderMedia(card.__quoteMedia, card.querySelector('.card__quote-media'), { quote: true });
+    }
+  }
+
+  function refreshAllMedia() {
+    dom.capture.querySelectorAll('.card').forEach(renderCardMedia);
+  }
+
+  function clearCapture() {
+    dom.capture.innerHTML = '';
+    watermarkEl = null;
+    state.root = null;
+  }
+
+  /* ── export ───────────────────────────────────────────────────────────── */
+
+  function ensureWatermark() {
+    if (!watermarkEl) {
+      watermarkEl = document.createElement('div');
+      watermarkEl.className = 'capture__watermark';
+      watermarkEl.innerHTML =
+        '<svg viewBox="0 0 32 32" fill="none">' +
+        '<rect width="32" height="32" rx="9.5" fill="#fff"/>' +
+        '<path d="M11.2 11.2 20.8 20.8M20.8 11.2 11.2 20.8" stroke="#0a0a0c" stroke-width="3" stroke-linecap="round"/>' +
+        '</svg><span>XSnap</span>';
+      dom.capture.appendChild(watermarkEl);
+    }
+    watermarkEl.hidden = !state.watermark;
+    return watermarkEl;
+  }
+
+  async function renderCanvas() {
+    if (!dom.capture.querySelector('.card')) {
+      toast(t('toastNoData'), 'error');
+      return null;
+    }
+    if (typeof html2canvas !== 'function') {
+      toast('Renderer failed to load.', 'error');
+      return null;
+    }
+
+    ensureWatermark();
+    dom.capture.classList.add('is-capturing');
+    dom.capture.classList.toggle('is-hide-stats', !state.stats);
+
+    try {
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      await nextFrame();
+      await nextFrame();
+
+      const canvas = await html2canvas(dom.capture, {
+        scale: state.quality,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: null,
+        logging: false,
+        imageTimeout: 20000
+      });
+      return canvas;
+    } catch (err) {
+      console.error(err);
+      toast('Render failed — ' + err.message, 'error');
+      return null;
+    } finally {
+      dom.capture.classList.remove('is-capturing');
+      dom.capture.classList.remove('is-hide-stats');
+      if (watermarkEl) watermarkEl.hidden = true;
+      refreshAllMedia();
+    }
+  }
+
+  function downloadName() {
+    const a = state.root && state.root.author ? state.root.author.screen_name : 'post';
+    const id = state.root ? state.root.id : Date.now();
+    return `XSnap-${a}-${id}.png`;
+  }
+
+  function canvasToBlob(canvas) {
+    return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
+  }
+
+  async function download() {
+    dom.downloadBtn.disabled = true;
+    try {
+      const canvas = await renderCanvas();
+      if (!canvas) return;
+      const blob = await canvasToBlob(canvas);
+      if (!blob) { toast('Could not encode image.', 'error'); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = downloadName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast(t('toastDownload'), 'success');
+    } finally {
+      dom.downloadBtn.disabled = false;
+    }
+  }
+
+  async function copyImage() {
+    if (!navigator.clipboard || !window.ClipboardItem) {
+      toast(t('toastCopyFail'), 'error');
+      return;
+    }
+    dom.copyBtn.disabled = true;
+    try {
+      const canvas = await renderCanvas();
+      if (!canvas) return;
+      const blob = await canvasToBlob(canvas);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      toast(t('toastCopied'), 'success');
+    } catch (err) {
+      console.error(err);
+      toast(t('toastCopyFail'), 'error');
+    } finally {
+      dom.copyBtn.disabled = false;
+    }
+  }
+
+  /* ── background & card controls ───────────────────────────────────────── */
+
+  function applyBackground() {
+    dom.capture.style.backgroundImage =
+      `linear-gradient(135deg, ${state.bg.colors[0]}, ${state.bg.colors[1]})`;
+  }
+
+  function buildSwatches() {
+    dom.bgSwatches.innerHTML = '';
+    BG_PRESETS.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.title = p.id;
+      b.dataset.index = i;
+      b.style.background = `linear-gradient(135deg, ${p.colors[0]}, ${p.colors[1]})`;
+      b.addEventListener('click', () => selectBgPreset(i));
+      dom.bgSwatches.appendChild(b);
+    });
+
+    const custom = document.createElement('button');
+    custom.type = 'button';
+    custom.className = 'swatch swatch--custom';
+    custom.title = 'Custom';
+    custom.dataset.index = 'custom';
+    custom.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+      '<path d="M12 5v14M5 12h14"/></svg>';
+    custom.addEventListener('click', () => selectBgCustom());
+    dom.bgSwatches.appendChild(custom);
+
+    dom.cardSwatches.innerHTML = '';
+    CARD_PRESETS.forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.title = p.id;
+      b.dataset.mode = p.mode;
+      b.style.background = p.preview;
+      b.addEventListener('click', () => selectCardPreset(p.mode, p.preview));
+      dom.cardSwatches.appendChild(b);
+    });
+
+    const cc = document.createElement('button');
+    cc.type = 'button';
+    cc.className = 'swatch swatch--custom';
+    cc.title = 'Custom';
+    cc.dataset.mode = 'custom';
+    cc.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+      '<path d="M12 5v14M5 12h14"/></svg>';
+    cc.addEventListener('click', () => selectCardPreset('custom', dom.cardColor.value));
+    dom.cardSwatches.appendChild(cc);
+  }
+
+  function markSwatch(container, predicate) {
+    container.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('is-active', predicate(s)));
+  }
+
+  function selectBgPreset(i) {
+    state.bg.colors = BG_PRESETS[i].colors.slice();
+    dom.bgColor1.value = state.bg.colors[0];
+    dom.bgColor2.value = state.bg.colors[1];
+    dom.customBg.hidden = true;
+    applyBackground();
+    markSwatch(dom.bgSwatches, (s) => s.dataset.index === String(i));
+  }
+
+  function selectBgCustom() {
+    state.bg.colors = [dom.bgColor1.value, dom.bgColor2.value];
+    dom.customBg.hidden = false;
+    applyBackground();
+    markSwatch(dom.bgSwatches, (s) => s.dataset.index === 'custom');
+  }
+
+  function selectCardPreset(mode, color) {
+    state.card.mode = mode;
+    state.card.color = color || state.card.color;
+    dom.customCard.hidden = mode !== 'custom';
+    if (mode === 'custom') {
+      dom.cardColor.value = state.card.color;
+      markSwatch(dom.cardSwatches, (s) => s.dataset.mode === 'custom');
+    } else {
+      markSwatch(dom.cardSwatches, (s) => s.dataset.mode === mode);
+    }
+    dom.capture.querySelectorAll('.card').forEach(applyCardStyle);
+  }
+
+  function initSegmented(el, onPick) {
+    const buttons = Array.from(el.querySelectorAll('button'));
+    el.dataset.count = String(buttons.length);
+
+    const sync = (value) => {
+      const i = buttons.findIndex((b) => b.dataset.value === String(value));
+      el.dataset.active = String(Math.max(0, i));
+      buttons.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.value === String(value))));
     };
 
-    let initialTweetData = null;
-    let currentLang = 'en';
-    let proxyRetryNotified = false; // 全局标志位，用于控制通知只显示一次
-    
-    // --- 函数定义区 ---
-    
-    function init() {
-        detectLanguage();
-        translateUI();
-        setInitialTheme();
-        setupSwatches();
-        attachEventListeners();
+    buttons.forEach((b) => {
+      b.addEventListener('click', () => {
+        sync(b.dataset.value);
+        onPick(b.dataset.value);
+      });
+    });
+    return sync;
+  }
+
+  /* ── flow ─────────────────────────────────────────────────────────────── */
+
+  function showEditor() {
+    dom.landing.hidden = true;
+    dom.editor.hidden = false;
+    dom.backBtn.hidden = false;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function showLanding() {
+    dom.editor.hidden = true;
+    dom.landing.hidden = false;
+    dom.backBtn.hidden = true;
+    if (watermarkEl) watermarkEl.remove();
+    watermarkEl = null;
+    clearCapture();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    dom.urlInput.focus();
+  }
+
+  async function generate(input, opts) {
+    const parsed = parseTweetUrl(input);
+    if (!parsed) {
+      toast(t('toastInvalidLink'), 'error');
+      return;
     }
 
-    function detectLanguage() {
-        const lang = navigator.language || navigator.userLanguage;
-        currentLang = (typeof i18n !== 'undefined' && i18n[lang.slice(0, 2)]) ? lang.slice(0, 2) : 'en';
-        document.documentElement.lang = currentLang;
+    const quiet = opts && opts.quiet;
+    if (!dom.editor.hidden || dom.capture.querySelector('.card')) clearCapture();
+    dom.composer.classList.add('is-busy');
+    dom.fetchBtn.disabled = true;
+    if (!quiet) toast(t('toastFetch'), 'info');
+
+    try {
+      const tweet = await fetchTweet(parsed.user, parsed.id);
+
+      // The card is measured with clientWidth, so it has to be visible first.
+      dom.editor.hidden = false;
+      mountTweet(tweet);
+      state.root = tweet;
+
+      if (!quiet) showEditor();
+      toast(t('toastSuccess'), 'success');
+    } catch (err) {
+      console.error(err);
+      toast(t('toastFailure') + (err.message || err), 'error');
+      if (!dom.capture.querySelector('.card')) dom.editor.hidden = true;
+    } finally {
+      dom.composer.classList.remove('is-busy');
+      dom.fetchBtn.disabled = false;
     }
+  }
 
-    function translateUI() {
-        if (typeof i18n === 'undefined') return;
-        const translations = i18n[currentLang];
-        document.querySelectorAll('[data-i18n]').forEach(el => {
-            const key = el.dataset.i18n;
-            if(translations[key]) el.textContent = translations[key];
-        });
-        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-            const key = el.dataset.i18nPlaceholder;
-            if(translations[key]) el.placeholder = translations[key];
-        });
-        document.querySelectorAll('[data-i18n-html]').forEach(el => {
-            const key = el.dataset.i18nHtml;
-            if(translations[key]) el.innerHTML = translations[key];
-        });
+  async function loadParent(btn) {
+    const user = btn.dataset.user;
+    const id = btn.dataset.id;
+    if (!user || !id) return;
+
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = t('loadingParent');
+
+    try {
+      const tweet = await fetchTweet(user, id);
+      const gap = btn.closest('.thread-gap');
+      const anchor = gap || btn.closest('.card');
+      mountTweet(tweet, anchor);
+      if (gap) gap.remove();
+      refreshAllMedia();
+    } catch (err) {
+      console.error(err);
+      toast(t('toastParentFail'), 'error');
+      btn.disabled = false;
+      btn.textContent = label;
     }
-    
-    function setInitialTheme() {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        document.documentElement.dataset.theme = prefersDark ? 'dark' : 'light';
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-            document.documentElement.dataset.theme = e.matches ? 'dark' : 'light';
-        });
+  }
+
+  /* ── wiring ───────────────────────────────────────────────────────────── */
+
+  function bind() {
+    // landing form
+    dom.composer.addEventListener('submit', (e) => {
+      e.preventDefault();
+      generate(dom.urlInput.value);
+    });
+
+    dom.exampleBtn.addEventListener('click', () => {
+      dom.urlInput.value = EXAMPLE;
+      generate(EXAMPLE);
+    });
+
+    dom.backBtn.addEventListener('click', showLanding);
+
+    // panel
+    dom.shuffleBg.addEventListener('click', () => {
+      let i = Math.floor(Math.random() * BG_PRESETS.length);
+      const active = dom.bgSwatches.querySelector('.swatch.is-active');
+      if (active && active.dataset.index === String(i)) i = (i + 1) % BG_PRESETS.length;
+      selectBgPreset(i);
+    });
+
+    dom.bgColor1.addEventListener('input', () => {
+      state.bg.colors[0] = dom.bgColor1.value;
+      dom.customBg.hidden = false;
+      markSwatch(dom.bgSwatches, (s) => s.dataset.index === 'custom');
+      applyBackground();
+    });
+    dom.bgColor2.addEventListener('input', () => {
+      state.bg.colors[1] = dom.bgColor2.value;
+      dom.customBg.hidden = false;
+      markSwatch(dom.bgSwatches, (s) => s.dataset.index === 'custom');
+      applyBackground();
+    });
+
+    dom.cardColor.addEventListener('input', () => {
+      state.card.mode = 'custom';
+      state.card.color = dom.cardColor.value;
+      dom.customCard.hidden = false;
+      markSwatch(dom.cardSwatches, (s) => s.dataset.mode === 'custom');
+      dom.capture.querySelectorAll('.card').forEach(applyCardStyle);
+    });
+
+    dom.optStats.addEventListener('change', () => {
+      state.stats = dom.optStats.checked;
+      dom.capture.classList.toggle('is-hide-stats', !state.stats);
+    });
+
+    dom.optWatermark.addEventListener('change', () => {
+      state.watermark = dom.optWatermark.checked;
+      if (watermarkEl) watermarkEl.hidden = !state.watermark;
+    });
+
+    dom.downloadBtn.addEventListener('click', download);
+    dom.copyBtn.addEventListener('click', copyImage);
+
+    // parent chain (delegated: cards come and go)
+    dom.capture.addEventListener('click', (e) => {
+      const btn = e.target.closest('.parent-btn');
+      if (btn) loadParent(btn);
+    });
+
+    // shortcuts
+    document.addEventListener('keydown', (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === 's' && !dom.editor.hidden) {
+        e.preventDefault();
+        download();
+      }
+      if (e.key === 'Escape' && !dom.editor.hidden) showLanding();
+    });
+
+    // sticky topbar border
+    const onScroll = () => dom.topbar.classList.toggle('is-stuck', window.scrollY > 8);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+
+    // media cells are sized in px, so re-measure on resize
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (!dom.editor.hidden) refreshAllMedia();
+      }, 180);
+    });
+  }
+
+  function collect() {
+    dom.landing = $('#landing');
+    dom.editor = $('#editor');
+    dom.composer = $('#composer');
+    dom.urlInput = $('#tweet-url');
+    dom.fetchBtn = $('#fetch-btn');
+    dom.exampleBtn = $('#example-btn');
+    dom.backBtn = $('#back-btn');
+    dom.themeToggle = $('#theme-toggle');
+    dom.topbar = $('.topbar');
+    dom.capture = $('#capture-area');
+    dom.toasts = $('#toast-container');
+
+    dom.bgSwatches = $('#bg-swatches');
+    dom.cardSwatches = $('#card-swatches');
+    dom.customBg = $('#custom-bg');
+    dom.customCard = $('#custom-card');
+    dom.bgColor1 = $('#bg-color-1');
+    dom.bgColor2 = $('#bg-color-2');
+    dom.cardColor = $('#card-color-custom');
+    dom.shuffleBg = $('#shuffle-bg');
+
+    dom.layoutSeg = $('#layout-seg');
+    dom.qualitySeg = $('#quality-seg');
+
+    dom.optStats = $('#opt-stats');
+    dom.optWatermark = $('#opt-watermark');
+    dom.downloadBtn = $('#download-btn');
+    dom.copyBtn = $('#copy-btn');
+  }
+
+  function boot() {
+    collect();
+    initLang();
+    initTheme();
+    buildSwatches();
+    selectBgPreset(0);
+    selectCardPreset('light', '#ffffff');
+    dom.layoutSync = initSegmented(dom.layoutSeg, (v) => { state.layout = v; refreshAllMedia(); });
+    dom.qualitySync = initSegmented(dom.qualitySeg, (v) => { state.quality = Number(v); });
+    dom.layoutSync('grid');
+    dom.qualitySync('3');
+    bind();
+    ensureWatermark();
+
+    // Small scripting hook — handy for embedding, and for driving the app in tests.
+    window.XSnap = {
+      generate,
+      download,
+      copyImage,
+      refresh: refreshAllMedia,
+      mount: mountTweet,
+      state
+    };
+
+    // deep link: ?url=<link>
+    const params = new URLSearchParams(location.search);
+    const deep = params.get('url');
+    if (deep) {
+      dom.urlInput.value = deep;
+      generate(deep);
     }
-    
-    function showToast(message, type = 'info') {
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.textContent = message;
-        dom.toastContainer.appendChild(toast);
-        setTimeout(() => toast.remove(), 5000);
-    }
+  }
 
-    async function fetchTweet(url) {
-        if (!url) { 
-            url = dom.tweetUrlInput.value.trim();
-            if (!url) { 
-                showToast(i18n[currentLang].toastInvalidLink, 'error'); 
-                return null; 
-            }
-        }
-        
-        showToast(i18n[currentLang].toastFetch, 'info');
-        if (!url.startsWith('http')) { url = 'https://' + url; }
-
-        url = url.replace('twitter.com', 'fxtwitter.com').replace('x.com', 'fxtwitter.com');
-        const apiUrl = new URL(url);
-        apiUrl.protocol = 'https:';
-        apiUrl.hostname = 'api.fxtwitter.com';
-        apiUrl.pathname += '/json';
-        
-        try {
-            const response = await fetch(apiUrl.toString());
-            if (!response.ok) throw new Error(`API Request Failed: ${response.status}`);
-            const data = await response.json();
-            if (data.code !== 200 || !data.tweet) throw new Error(data.message || 'Could not parse tweet');
-            showToast(i18n[currentLang].toastSuccess, 'success');
-            return data.tweet;
-        } catch (error) {
-            showToast(i18n[currentLang].toastFailure + error.message, 'error');
-            return null;
-        }
-    }
-
-    function applyCardStyleToCard(cardElement, mode, customColor) {
-        cardElement.className = 'card'; // Reset classes
-        if (mode === 'custom') {
-            cardElement.style.backgroundColor = customColor;
-        } else {
-            cardElement.classList.add(mode);
-            cardElement.style.backgroundColor = ''; // Clear custom color
-        }
-    }
-
-    function createTweetCardElement(tweetData) {
-        const card = dom.tweetCardTemplate.cloneNode(true);
-        card.removeAttribute('id');
-        card.style.display = 'block';
-
-        const tweetToRender = tweetData.retweeted_status || tweetData;
-        const retweeter = tweetData.retweeted_status ? tweetData.author : null;
-
-        card.dataset.tweet = JSON.stringify(tweetToRender); // Store data for later
-
-        const els = {
-            retweetInfo: card.querySelector('.retweet-info'),
-            showParentBtn: card.querySelector('.show-parent-btn'),
-            avatar: card.querySelector('.avatar-preview'),
-            username: card.querySelector('.username'),
-            handle: card.querySelector('.handle'),
-            text: card.querySelector('.text-preview'),
-            media: card.querySelector('.media-preview'),
-            quotedContainer: card.querySelector('.quoted-tweet-preview'),
-            quotedAvatar: card.querySelector('.quoted-avatar-preview'),
-            quotedUsername: card.querySelector('.quoted-username'),
-            quotedHandle: card.querySelector('.quoted-handle'),
-            quotedText: card.querySelector('.quoted-text-preview'),
-            quotedMedia: card.querySelector('.quoted-media-preview'),
-            replies: card.querySelector('.replies-preview'),
-            retweets: card.querySelector('.retweets-preview'),
-            likes: card.querySelector('.likes-preview')
-        };
-
-        els.retweetInfo.style.display = 'none';
-        els.showParentBtn.style.display = 'none';
-        els.quotedContainer.style.display = 'none';
-
-        if (retweeter) {
-            els.retweetInfo.textContent = `Retweeted by ${retweeter.name}`;
-            els.retweetInfo.style.display = 'block';
-        }
-
-        const { author, text, replies, retweets, likes, quote, replying_to, replying_to_status, media } = tweetToRender;
-        
-        els.username.textContent = author.name;
-        els.handle.textContent = `@${author.screen_name}`;
-        els.text.textContent = text;
-        loadImageWithFallback(els.avatar, author.avatar_url);
-
-        els.replies.textContent = `💬 ${replies || 0}`;
-        els.retweets.textContent = `🔁 ${retweets || 0}`;
-        els.likes.textContent = `❤️ ${likes || 0}`;
-
-        renderMedia(media, els.media);
-
-        if (quote) {
-            els.quotedContainer.style.display = 'block';
-            els.quotedUsername.textContent = quote.author.name;
-            els.quotedHandle.textContent = `@${quote.author.screen_name}`;
-            els.quotedText.textContent = quote.text;
-            loadImageWithFallback(els.quotedAvatar, quote.author.avatar_url);
-            renderMedia(quote.media, els.quotedMedia, true);
-        }
-
-        if (replying_to && replying_to_status) {
-            const parentTweetUrl = `https://twitter.com/${replying_to}/status/${replying_to_status}`;
-            els.showParentBtn.style.display = 'block';
-            els.showParentBtn.dataset.url = parentTweetUrl;
-        }
-
-        // Apply current card style
-        const activeSwatch = dom.cardSwatches.querySelector('.color-swatch.active');
-        if (activeSwatch) {
-            const mode = activeSwatch.dataset.mode;
-            const customColor = activeSwatch.dataset.color;
-            applyCardStyleToCard(card, mode, customColor);
-        }
-
-        return card;
-    }
-
-    function renderMedia(mediaData, container, isQuote = false) {
-        container.innerHTML = '';
-        if (!mediaData) return;
-
-        const { photos, videos } = mediaData;
-        if (photos && photos.length > 0) {
-            const mediaContainer = document.createElement('div');
-            if (isQuote) {
-                mediaContainer.className = 'media-waterfall';
-                mediaContainer.appendChild(createImage(photos[0].url));
-            } else {
-                const layout = document.querySelector('input[name="layout-mode"]:checked').value;
-                if (layout === 'grid' && photos.length > 1) {
-                    const count = Math.min(photos.length, 4);
-                    mediaContainer.className = `media-grid grid-${count}`;
-                    photos.slice(0, count).forEach(p => mediaContainer.appendChild(createImage(p.url)));
-                } else {
-                    mediaContainer.className = 'media-waterfall';
-                    photos.forEach(p => mediaContainer.appendChild(createImage(p.url)));
-                }
-            }
-            container.appendChild(mediaContainer);
-        } else if (videos && videos.length > 0) {
-            const mediaContainer = document.createElement('div');
-            mediaContainer.className = 'media-waterfall';
-            mediaContainer.appendChild(createImage(videos[0].thumbnail_url));
-            container.appendChild(mediaContainer);
-        }
-    }
-    
-    function proxyUrl(url) {
-        return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    }
-    
-    function loadImageWithFallback(imgElement, originalSrc) {
-        imgElement.crossOrigin = "anonymous";
-        imgElement.onerror = () => {
-            if (!proxyRetryNotified) {
-                let msg = "A request was blocked by tracking protection. Retrying with a proxy...";
-                if (currentLang === 'zh') {
-                    msg = "一个请求被增强型隐私保护拦截，正在尝试使用代理…";
-                }
-                showToast(msg, 'info');
-                proxyRetryNotified = true;
-            }
-            imgElement.src = proxyUrl(originalSrc);
-            imgElement.onerror = null;
-        };
-        imgElement.src = originalSrc;
-    }
-
-    function createImage(src) {
-        const img = document.createElement('img');
-        loadImageWithFallback(img, src);
-        return img;
-    }
-
-    function setupSwatches() {
-        PRESET_GRADIENTS.forEach(p => {
-            const swatch = createSwatch(p.name, p.colors.length > 0 ? `linear-gradient(135deg, ${p.colors[0]}, ${p.colors[1]})` : '#ccc');
-            swatch.dataset.colors = p.colors.join(',');
-            dom.bgSwatches.appendChild(swatch);
-        });
-        PRESET_CARD_COLORS.forEach(p => {
-            const swatch = createSwatch(p.name, p.color || '#ccc');
-            swatch.dataset.color = p.color;
-            swatch.dataset.mode = p.mode;
-            dom.cardSwatches.appendChild(swatch);
-        });
-        dom.bgSwatches.querySelector('.color-swatch').classList.add('active');
-        dom.cardSwatches.querySelector('.color-swatch').classList.add('active');
-        updateGradient();
-    }
-    
-    function createSwatch(name, background) {
-        const swatch = document.createElement('div');
-        swatch.className = 'color-swatch';
-        swatch.title = name;
-        swatch.style.background = background;
-        if (name === 'Custom') {
-            swatch.style.textAlign = 'center';
-            swatch.style.lineHeight = '28px';
-            swatch.style.fontSize = '18px';
-            swatch.textContent = '...';
-        }
-        return swatch;
-    }
-
-    function handleSwatchActivation(container, target) {
-        container.querySelector('.active')?.classList.remove('active');
-        target.classList.add('active');
-    }
-    
-    function handleBgSwatchClick(e) {
-        if (!e.target.classList.contains('color-swatch')) return;
-        handleSwatchActivation(dom.bgSwatches, e.target);
-        if (e.target.title === 'Custom') {
-            dom.customBgPicker.classList.add('visible');
-        } else {
-            dom.customBgPicker.classList.remove('visible');
-            updateGradient();
-        }
-    }
-    
-    function handleCardSwatchClick(e) {
-        if (!e.target.classList.contains('color-swatch')) return;
-        handleSwatchActivation(dom.cardSwatches, e.target);
-        const mode = e.target.dataset.mode;
-        const customColor = e.target.dataset.color;
-
-        dom.captureArea.querySelectorAll('.card').forEach(card => {
-            applyCardStyleToCard(card, mode, customColor);
-        });
-
-        if (mode === 'custom') {
-            dom.customCardPicker.classList.add('visible');
-        } else {
-            dom.customCardPicker.classList.remove('visible');
-        }
-    }
-
-    function updateGradient(fromCustom = false) {
-        const activeSwatch = dom.bgSwatches.querySelector('.active');
-        const colors = fromCustom 
-            ? [dom.bgColor1.value, dom.bgColor2.value] 
-            : activeSwatch.dataset.colors.split(',');
-        dom.captureArea.style.backgroundImage = `linear-gradient(135deg, ${colors[0]}, ${colors[1]})`;
-    }
-
-    function downloadImage() {
-        const cards = dom.captureArea.querySelectorAll('.card');
-        if (cards.length === 0) { 
-            showToast(i18n[currentLang].toastNoData, 'error'); 
-            return; 
-        }
-
-        const buttonsToHide = dom.captureArea.querySelectorAll('.show-parent-btn');
-        const originalButtonStates = [];
-        buttonsToHide.forEach(btn => {
-            originalButtonStates.push({ btn: btn, display: btn.style.display, textContent: btn.textContent, disabled: btn.disabled });
-            btn.style.display = 'none';
-        });
-
-        const textElementsToFix = dom.captureArea.querySelectorAll('.username, .handle, .text-preview, .replies-preview, .retweets-preview, .likes-preview');
-        textElementsToFix.forEach(el => {
-            el.style.color = window.getComputedStyle(el).color;
-        });
-
-        const watermark = document.createElement('div');
-        watermark.id = 'watermark';
-        watermark.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="16" height="16"><defs><linearGradient id="cameraGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#333333"/><stop offset="100%" stop-color="#0a0a0a"/></linearGradient><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(0,0,0,0.3)"/></filter></defs><rect width="120" height="120" rx="20" fill="url(#cameraGradient)" filter="url(#shadow)"/><circle cx="60" cy="60" r="38" fill="#1a1a1a" stroke="#444" stroke-width="2"/><circle cx="60" cy="60" r="30" fill="#111" stroke="#333" stroke-width="1"/><g transform="translate(60, 60) scale(0.05) translate(-420, -420)"><path d="M818 800 498.11 333.745l.546.437L787.084 0h-96.385L455.738 272 269.15 0H16.367l298.648 435.31-.036-.037L0 800h96.385l261.222-302.618L565.217 800zM230.96 72.727l448.827 654.546h-76.38L154.217 72.727z" fill="#FFF"/></g><circle cx="18" cy="18" r="10" fill="#0a0a0a" stroke="#222" stroke-width="1"/><circle cx="70" cy="45" r="4" fill="white" opacity="0.3"/><circle cx="55" cy="50" r="2" fill="white" opacity="0.2"/></svg>
-            <span>Generated by XSnap</span>
-            <svg xmlns="http://www.w3.org/2000/svg" role="img" viewBox="0 0 24 24" fill="currentColor"><title>GitHub</title><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
-        `;
-        dom.captureArea.appendChild(watermark);
-        
-        html2canvas(dom.captureArea, { useCORS: true, allowTaint: true, scale: 2.5, backgroundColor: null })
-            .then(canvas => {
-                const link = document.createElement('a');
-                const firstCard = dom.captureArea.querySelector('.card');
-                const tweetAuthor = initialTweetData.author.screen_name;
-                const tweetId = initialTweetData.id;
-                link.download = `XSnap-${tweetAuthor}-${tweetId}.png`;
-                link.href = canvas.toDataURL('image/png');
-                link.click();
-                showToast(i18n[currentLang].toastDownload, 'success');
-            })
-            .finally(() => {
-                dom.captureArea.removeChild(watermark);
-                textElementsToFix.forEach(el => { el.style.color = ''; });
-                originalButtonStates.forEach(state => {
-                    state.btn.style.display = state.display;
-                    state.btn.textContent = state.textContent;
-                    state.btn.disabled = state.disabled;
-                });
-            });
-    }
-
-    function attachEventListeners() {
-        dom.fetchBtn.addEventListener('click', async () => {
-            dom.fetchBtn.disabled = true;
-            initialTweetData = await fetchTweet();
-            if (initialTweetData) {
-                dom.captureArea.innerHTML = ''; // Clear previous results
-                const card = createTweetCardElement(initialTweetData);
-                dom.captureArea.appendChild(card);
-                dom.welcomeScreen.style.display = 'none';
-                dom.editorScreen.classList.add('visible');
-            }
-            dom.fetchBtn.disabled = false;
-        });
-
-        dom.tweetUrlInput.addEventListener('keydown', (e) => { 
-            if (e.key === 'Enter') dom.fetchBtn.click(); 
-        });
-        
-        dom.downloadBtn.addEventListener('click', downloadImage);
-
-        dom.captureArea.addEventListener('click', async (e) => {
-            if (e.target.matches('.show-parent-btn')) {
-                const btn = e.target;
-                const url = btn.dataset.url;
-                if (url) {
-                    btn.disabled = true;
-                    btn.textContent = 'Loading...';
-                    const parentTweet = await fetchTweet(url);
-                    if (parentTweet) {
-                        const parentCard = createTweetCardElement(parentTweet);
-                        const currentCard = btn.closest('.card');
-                        dom.captureArea.insertBefore(parentCard, currentCard);
-                    }
-                    btn.disabled = false;
-                    btn.textContent = i18n[currentLang].showParentTweet;
-                    btn.style.display = 'none'; // Hide after loading
-                }
-            }
-        });
-
-        dom.bgSwatches.addEventListener('click', handleBgSwatchClick);
-        dom.cardSwatches.addEventListener('click', handleCardSwatchClick);
-        dom.bgColor1.addEventListener('input', () => updateGradient(true));
-        dom.bgColor2.addEventListener('input', () => updateGradient(true));
-        dom.cardColorCustom.addEventListener('input', (e) => {
-            dom.captureArea.querySelectorAll('.card').forEach(card => {
-                applyCardStyleToCard(card, 'custom', e.target.value);
-            });
-            handleSwatchActivation(dom.cardSwatches, dom.cardSwatches.querySelector('[title=Custom]'));
-        });
-
-        document.querySelectorAll('input[name="layout-mode"]').forEach(r => r.addEventListener('change', () => {
-            const firstCard = dom.captureArea.querySelector('.card');
-            if (firstCard) {
-                const tweetData = JSON.parse(firstCard.dataset.tweet);
-                const mediaContainer = firstCard.querySelector('.media-preview');
-                renderMedia(tweetData.media, mediaContainer);
-            }
-        }));
-    }
-
-    // --- 应用启动 ---
-    init();
-});
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
