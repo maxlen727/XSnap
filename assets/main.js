@@ -27,11 +27,11 @@
     { id: 'paper',  name: '纸',   bg: '#f4f1ea', wm: 'rgba(17,17,17,0.42)' },
     { id: 'white',  name: '白',   bg: '#ffffff', wm: 'rgba(17,17,17,0.34)' },
     { id: 'ink',    name: '墨',   bg: '#131313', wm: 'rgba(255,255,255,0.46)' },
-    { id: 'rouge',  name: '胭脂', bg: '#f60c3e', wm: 'rgba(255,255,255,0.66)' },
+    { id: 'indigo', name: '靛',   bg: '#1d3bff', wm: 'rgba(255,255,255,0.7)' },
     { id: 'blush',  name: '粉',   bg: '#ffd9e0', wm: 'rgba(17,17,17,0.42)' },
     { id: 'sand',   name: '沙',   bg: '#e6ddca', wm: 'rgba(17,17,17,0.42)' },
     { id: 'dots',   name: '点阵', bg: '#f4f1ea', wm: 'rgba(17,17,17,0.42)',
-      tile: { w: 14, h: 14, svg: "<circle cx='7' cy='7' r='1' fill='#f60c3e' fill-opacity='0.38'/>" } },
+      tile: { w: 14, h: 14, svg: "<circle cx='7' cy='7' r='1' fill='#1d3bff' fill-opacity='0.34'/>" } },
     { id: 'grid',   name: '方格', bg: '#ffffff', wm: 'rgba(17,17,17,0.34)',
       tile: { w: 24, h: 24,
         svg: "<rect width='24' height='1' fill='#111111' fill-opacity='0.09'/>" +
@@ -48,7 +48,7 @@
 
   const state = {
     lang: 'en',
-    bg: { colors: ['#f4f1ea', '#f60c3e'], preset: 0 },
+    bg: { colors: ['#f4f1ea', '#1d3bff'], preset: 0 },
     card: { mode: 'light', color: '#ffffff' },
     layout: 'grid',
     quality: 3,

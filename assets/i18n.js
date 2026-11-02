@@ -2,8 +2,7 @@
 const i18n = {
   en: {
     pageTitle: "XSnap — Turn a post into an image",
-    since: "since 2025",
-    masthead: "LINK IN · IMAGE OUT",
+    masthead: "RENDERED LOCALLY · NOTHING UPLOADED",
     urlLabel: "Link",
     placeholder: "https://x.com/…",
     generate: "Snap",
@@ -53,8 +52,7 @@ const i18n = {
 
   zh: {
     pageTitle: "XSnap — 把一条推文排版成一张图",
-    since: "始于二〇二五",
-    masthead: "贴链接 · 出图",
+    masthead: "本地渲染 · 不上传",
     urlLabel: "链接",
     placeholder: "https://x.com/…",
     generate: "生成",
